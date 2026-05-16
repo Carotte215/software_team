@@ -15,6 +15,8 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
 
   if (parts[0] === "student" && parts[1] === "me") return getMe(session);
   if (parts[0] === "students" && parts[1] === "import" && verb === "POST") return importStudents(data, session);
+  if (parts[0] === "students" && parts[1] === "field-policy") return studentFieldPolicy(session);
+  if (parts[0] === "students" && parts[1] && verb === "PATCH") return updateStudent(parts[1], data, session);
   if (parts[0] === "students") return { list: readDb().students.map((s) => publicStudent(s, ROLES.TEACHER)) };
 
   if (parts[0] === "knowledge" && parts.length === 1 && verb === "GET") return knowledgeList(data);
@@ -30,7 +32,7 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
   if (parts[0] === "party" && parts[1] === "progress") return partyProgress(session.studentId);
   if (parts[0] === "party" && parts[1] === "tasks" && parts[3] === "done" && verb === "POST") return completePartyTask(session.studentId, parts[2]);
 
-  if (parts[0] === "notices" && parts.length === 1) return { list: readDb().notices.slice().sort((a, b) => b.publishedAt - a.publishedAt) };
+  if (parts[0] === "notices" && parts.length === 1) return { list: readDb().notices.filter((item) => item.publishedAt <= Date.now()).slice().sort((a, b) => b.publishedAt - a.publishedAt) };
   if (parts[0] === "notices" && parts[1]) return readDb().notices.find((n) => n.id === parts[1]);
   if (parts[0] === "messages" && parts[1] === "inbox") return inbox(session.studentId);
   if (parts[0] === "messages" && parts[2] === "read" && verb === "POST") return markRead(session.studentId, parts[1]);
@@ -42,7 +44,7 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
   if (parts[0] === "applications" && parts[2] === "submit" && verb === "POST") return submitExistingApplication(parts[1], data, session);
   if (parts[0] === "applications" && parts[1]) return applicationDetail(parts[1], session);
 
-  if (parts[0] === "honors" && parts.length === 1 && verb === "GET") return honors(data);
+  if (parts[0] === "honors" && parts.length === 1 && verb === "GET") return honors(data, session);
   if (parts[0] === "honors" && parts.length === 1 && verb === "POST") return createHonor(data, session);
   if (parts[0] === "honors" && parts[1] && verb === "PUT") return updateHonor(parts[1], data, session);
   if (parts[0] === "academic" && parts[1] === "report") return academicReport(session.studentId);
@@ -54,9 +56,13 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
   if (parts[0] === "workbench" && parts[1] === "knowledge" && parts[2] === "misses") return { list: readDb().missKeywords.sort((a, b) => b.count - a.count) };
   if (parts[0] === "workbench" && parts[1] === "academic" && parts[2] === "risks") return academicRisks(session);
   if (parts[0] === "workbench" && parts[1] === "notices" && parts[2] === "publish" && verb === "POST") return publishNotice(data, session);
-  if (parts[0] === "workbench" && parts[1] === "batches") return { list: batchesWithReadStats() };
+  if (parts[0] === "workbench" && parts[1] === "notices" && parts[2] === "scheduled" && parts[3] === "dispatch") return dispatchScheduledNotices(session);
+  if (parts[0] === "workbench" && parts[1] === "batches") return { list: batchesWithReadStats(data) };
   if (parts[0] === "workbench" && parts[1] === "sms") return { list: readDb().smsSimulation };
   if (parts[0] === "workbench" && parts[1] === "party" && parts[2] === "advance" && verb === "POST") return advanceParty(data, session);
+  if (parts[0] === "workbench" && parts[1] === "party" && parts[2] === "timeline" && verb === "GET") return partyTimeline(session);
+  if (parts[0] === "workbench" && parts[1] === "party" && parts[2] === "timeline" && verb === "PUT") return updatePartyTimeline(data, session);
+  if (parts[0] === "workbench" && parts[1] === "party" && parts[2] === "reminders" && parts[3] === "refresh") return refreshPartyReminders(session);
   if (parts[0] === "workbench" && parts[1] === "applications" && parts[2]) return decideApplication(parts[2], parts[3], data, session);
 
   if (parts[0] === "leader" && parts[1] === "dashboard") return leaderDashboard(session);
@@ -101,6 +107,42 @@ function publicStudent(s, role) {
   if (role === ROLES.TEACHER) return { ...base, phone: s.phone, phoneMasked: maskPhone(s.phone), hometown: s.hometown, idCardMasked: "**************" };
   if (role === ROLES.LEADER) return { ...base, phoneMasked: maskPhone(s.phone), hometown: s.hometown?.slice(0, 1) + "**" };
   return { ...base, phoneMasked: maskPhone(s.phone) };
+}
+
+function studentFieldPolicy(session) {
+  const policy = {
+    teacher: {
+      visible: ["studentId", "name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "extension"],
+      editable: ["name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "extension"],
+      exportable: ["studentId", "name", "grade", "major", "className", "nation", "phoneMasked", "politicalStatus", "tutor"],
+    },
+    coordinator: {
+      visible: ["studentId", "name", "grade", "major", "className", "nation", "politicalStatus", "extension"],
+      editable: ["politicalStatus", "extension"],
+      exportable: [],
+    },
+    leader: { visible: ["studentId", "name", "grade", "major", "className", "nation", "phoneMasked", "politicalStatus", "tutor", "hometown", "extension"], editable: [], exportable: [] },
+  }[session.role];
+  if (!policy) throw new Error("FORBIDDEN");
+  return { role: session.role, ...policy };
+}
+
+function updateStudent(studentId, data, session) {
+  const policy = studentFieldPolicy(session);
+  const rejected = Object.keys(data || {}).filter((field) => !policy.editable.includes(field));
+  if (rejected.length) throw new Error(`FIELD_NOT_EDITABLE:${rejected.join(",")}`);
+  let row;
+  withDb((db) => {
+    row = db.students.find((student) => student.studentId === studentId);
+    if (!row) throw new Error("NOT_FOUND");
+    if (session.role === ROLES.COORDINATOR) {
+      const current = db.students.find((student) => student.studentId === session.studentId);
+      if (!current || current.className !== row.className) throw new Error("FORBIDDEN");
+    }
+    Object.assign(row, data);
+    appendAudit(db, session, "student_update", studentId);
+  });
+  return publicStudent(row, session.role);
 }
 
 async function importStudents(data, session) {
@@ -200,6 +242,7 @@ function knowledgePayload(data) {
     summary: data.summary || "",
     body: data.body || "",
     sensitiveHint: Boolean(data.sensitiveHint),
+    attachments: data.attachments || [],
     online: data.online !== false,
   };
 }
@@ -295,7 +338,7 @@ function uploadFileMeta(data, session) {
 
 function partyProgress(studentId) {
   const db = readDb();
-  return { flowName: "入党流程", stages: FLOW_STAGES, ...db.partyByStudent[studentId] };
+  return { flowName: "入党流程", stages: FLOW_STAGES, timelineRules: getPartyRules(db), ...db.partyByStudent[studentId] };
 }
 
 function completePartyTask(studentId, taskId) {
@@ -305,6 +348,72 @@ function completePartyTask(studentId, taskId) {
     if (task) task.done = true;
   });
   return { ok: true };
+}
+
+function getPartyRules(db = readDb()) {
+  return db.partyTimelineRules || [
+    { stageKey: "applicant", durationDays: 30, remindBeforeDays: 7, material: "入党申请书、谈话记录" },
+    { stageKey: "activist", durationDays: 365, remindBeforeDays: 30, material: "培养考察登记表、思想汇报" },
+    { stageKey: "candidate", durationDays: 90, remindBeforeDays: 14, material: "政审材料、公示记录、培训结业材料" },
+    { stageKey: "probationary", durationDays: 365, remindBeforeDays: 30, material: "预备党员考察表、转正申请" },
+    { stageKey: "member", durationDays: 0, remindBeforeDays: 0, material: "归档材料" },
+  ];
+}
+
+function partyTimeline(session) {
+  if (![ROLES.TEACHER, ROLES.LEADER].includes(session.role)) throw new Error("FORBIDDEN");
+  return { stages: FLOW_STAGES, rules: getPartyRules() };
+}
+
+function updatePartyTimeline(data, session) {
+  requireTeacher(session);
+  let rules;
+  withDb((db) => {
+    rules = getPartyRules(db).map((rule) => {
+      const next = (data.rules || []).find((item) => item.stageKey === rule.stageKey) || {};
+      return {
+        stageKey: rule.stageKey,
+        durationDays: Math.max(0, Number(next.durationDays ?? rule.durationDays) || 0),
+        remindBeforeDays: Math.max(0, Number(next.remindBeforeDays ?? rule.remindBeforeDays) || 0),
+        material: next.material ?? rule.material,
+      };
+    });
+    db.partyTimelineRules = rules;
+    appendAudit(db, session, "party_timeline_update", "party_timeline");
+  });
+  return { ok: true, rules };
+}
+
+function refreshPartyReminders(session) {
+  requireTeacher(session);
+  let changed = 0;
+  let total = 0;
+  withDb((db) => {
+    const rules = getPartyRules(db);
+    Object.values(db.partyByStudent).forEach((progress) => {
+      total += 1;
+      const rule = rules.find((item) => item.stageKey === progress.currentKey);
+      if (!rule || rule.durationDays <= 0) return;
+      const taskId = `timeline_${progress.studentId}_${progress.currentKey}`;
+      const existing = progress.tasks.find((task) => task.id === taskId);
+      const stage = FLOW_STAGES.find((item) => item.key === progress.currentKey);
+      const startAt = Math.max(...progress.history.filter((item) => item.stageKey === progress.currentKey).map((item) => item.at), Date.now());
+      const task = {
+        id: taskId,
+        title: `${stage?.name || progress.currentKey}阶段材料提醒`,
+        body: `标准时间线约 ${rule.durationDays} 天，请准备：${rule.material}`,
+        dueAt: startAt + rule.durationDays * 86400000,
+        remindAt: startAt + Math.max(0, rule.durationDays - rule.remindBeforeDays) * 86400000,
+        done: Boolean(existing?.done),
+        source: "timeline",
+      };
+      if (existing) Object.assign(existing, task);
+      else progress.tasks.unshift(task);
+      changed += 1;
+    });
+    appendAudit(db, session, "party_reminders_refresh", "party_progress");
+  });
+  return { ok: true, students: total, changed };
 }
 
 function inbox(studentId) {
@@ -320,16 +429,22 @@ function markRead(studentId, id) {
   return { ok: true };
 }
 
-function batchesWithReadStats() {
+function batchesWithReadStats(query = {}) {
   const db = readDb();
   const messages = Object.values(db.inboxByStudent || {}).flat();
-  return db.batches.map((batch) => {
+  let list = db.batches.map((batch) => {
     const read = messages.filter((item) => item.batchId === batch.id && item.readAt).length;
     return {
       ...batch,
       channels: (batch.channels || []).map((channel) => (channel.name === "站内" ? { ...channel, read } : channel)),
     };
   });
+  if (query.title) list = list.filter((item) => item.title.includes(query.title));
+  if (query.batchId) list = list.filter((item) => item.id.includes(query.batchId));
+  if (query.status) list = list.filter((item) => item.status === query.status);
+  if (query.fromMs) list = list.filter((item) => item.createdAt >= Number(query.fromMs));
+  if (query.toMs) list = list.filter((item) => item.createdAt <= Number(query.toMs));
+  return list;
 }
 
 function applicationsList(data, session) {
@@ -443,12 +558,12 @@ function applicationDetail(id, session) {
   return app;
 }
 
-function honors(data) {
+function honors(data, session) {
   let list = readDb().honors.slice();
   if (data.year) list = list.filter((h) => String(h.year) === String(data.year));
   if (data.category) list = list.filter((h) => h.category === data.category);
   if (data.major) list = list.filter((h) => h.major.includes(data.major));
-  return { list };
+  return { list: list.map((item) => filterHonorAttachments(item, session.role)) };
 }
 
 function honorPayload(data) {
@@ -460,7 +575,14 @@ function honorPayload(data) {
     grade: data.grade || "",
     category: data.category || "",
     intro: data.intro || "",
+    visibility: data.visibility || "public",
+    attachments: (data.attachments || []).map((item) => ({ ...item, visibility: item.visibility || data.visibility || "public" })),
   };
+}
+
+function filterHonorAttachments(item, role) {
+  if ([ROLES.TEACHER, ROLES.LEADER].includes(role)) return item;
+  return { ...item, attachments: (item.attachments || []).filter((file) => file.visibility !== "restricted") };
 }
 
 function createHonor(data, session) {
@@ -566,7 +688,10 @@ function workbenchSummary(session) {
 
 function publishNotice(data, session) {
   if (![ROLES.TEACHER, ROLES.COORDINATOR].includes(session.role)) throw new Error("FORBIDDEN");
-  const notice = { id: uid("n"), title: data.title, tags: data.tags || [], summary: data.summary || data.title, content: data.content || data.summary, source: "Web 工作台", publishedAt: Date.now() };
+  const now = Date.now();
+  const scheduledAt = Number(data.scheduledAt || 0);
+  const scheduled = scheduledAt > now;
+  const notice = { id: uid("n"), title: data.title, tags: data.tags || [], summary: data.summary || data.title, content: data.content || data.summary, source: "Web 工作台", publishedAt: scheduled ? scheduledAt : now };
   const batchId = uid("batch");
   let reach = 0;
   withDb((db) => {
@@ -577,21 +702,58 @@ function publishNotice(data, session) {
       id: batchId,
       title: notice.title,
       targetRule: data.targetRule || { kind: "all" },
-      createdAt: Date.now(),
-      channels: [
-        { name: "站内", sendOk: reach, sendFail: 0, deliverOk: reach, deliverFail: 0, read: 0, observability: "可读" },
-        { name: "邮件", sendOk: reach, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, observability: "不可观测" },
-        { name: "短信(模拟)", sendOk: reach, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, observability: "模拟" },
-      ],
+      noticeId: notice.id,
+      status: scheduled ? "scheduled" : "sent",
+      scheduledAt: scheduled ? scheduledAt : now,
+      createdAt: now,
+      channels: scheduled ? scheduledChannels(reach) : sentChannels(reach),
     });
-    targets.forEach((s) => {
-      db.inboxByStudent[s.studentId] = db.inboxByStudent[s.studentId] || [];
-      db.inboxByStudent[s.studentId].unshift({ id: uid("msg"), noticeId: notice.id, title: notice.title, summary: notice.summary, batchId, createdAt: Date.now(), readAt: null, channels: [{ name: "站内", state: "发送请求成功", detail: "送达成功" }, { name: "邮件", state: "发送请求成功", detail: "不可观测" }] });
-    });
-    db.smsSimulation.unshift({ id: uid("sms"), batchId, at: Date.now(), audience: targets.map((s) => s.studentId), text: `[模拟短信] ${notice.title}` });
-    appendAudit(db, session, "notice_publish", batchId);
+    if (!scheduled) deliverMockNotice(db, notice, batchId, targets);
+    appendAudit(db, session, scheduled ? "notice_schedule" : "notice_publish", batchId);
   });
-  return { notice, batchId, reach };
+  return { notice, batchId, reach, scheduled };
+}
+
+function dispatchScheduledNotices(session) {
+  requireTeacher(session);
+  let dispatched = 0;
+  withDb((db) => {
+    db.batches.filter((batch) => batch.status === "scheduled" && batch.scheduledAt <= Date.now()).forEach((batch) => {
+      const notice = db.notices.find((item) => item.id === batch.noticeId);
+      if (!notice) return;
+      const targets = db.students.filter((s) => matchRule(batch.targetRule, s, session));
+      deliverMockNotice(db, notice, batch.id, targets);
+      batch.status = "sent";
+      batch.channels = sentChannels(targets.length);
+      dispatched += 1;
+    });
+    appendAudit(db, session, "notice_scheduled_dispatch", "notice_batches");
+  });
+  return { ok: true, dispatched };
+}
+
+function sentChannels(count) {
+  return [
+    { name: "站内", sendOk: count, sendFail: 0, deliverOk: count, deliverFail: 0, read: 0, observability: "可读" },
+    { name: "邮件", sendOk: count, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, observability: "不可观测" },
+    { name: "短信(模拟)", sendOk: count, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, observability: "模拟" },
+  ];
+}
+
+function scheduledChannels(count) {
+  return [
+    { name: "站内", sendOk: 0, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, target: count, observability: "待发送" },
+    { name: "邮件", sendOk: 0, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, target: count, observability: "待发送" },
+    { name: "短信(模拟)", sendOk: 0, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, target: count, observability: "待发送" },
+  ];
+}
+
+function deliverMockNotice(db, notice, batchId, targets) {
+  targets.forEach((s) => {
+    db.inboxByStudent[s.studentId] = db.inboxByStudent[s.studentId] || [];
+    db.inboxByStudent[s.studentId].unshift({ id: uid("msg"), noticeId: notice.id, title: notice.title, summary: notice.summary, batchId, createdAt: Date.now(), readAt: null, channels: [{ name: "站内", state: "发送请求成功", detail: "送达成功" }, { name: "邮件", state: "发送请求成功", detail: "不可观测" }] });
+  });
+  db.smsSimulation.unshift({ id: uid("sms"), batchId, at: Date.now(), audience: targets.map((s) => s.studentId), text: `[模拟短信] ${notice.title}` });
 }
 
 function matchRule(rule, student, session) {

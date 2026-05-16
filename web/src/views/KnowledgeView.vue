@@ -35,6 +35,12 @@ async function downloadTemplate(item) {
   saveBlob(blob, `${item.name}.${item.format || "txt"}`);
   toast("模板下载已开始");
 }
+
+async function downloadAttachment(file) {
+  const blob = await api.downloadFile(file);
+  saveBlob(blob, file.name || "policy-attachment");
+  toast("附件下载已开始");
+}
 </script>
 
 <template>
@@ -61,6 +67,11 @@ async function downloadTemplate(item) {
           </p>
           <p class="muted">更新：{{ formatTime(item.updatedAt) }}</p>
           <p v-if="item.sensitiveHint" class="muted">敏感内容仅展示摘要，请走官方渠道。</p>
+          <div v-if="item.attachments?.length" class="row wrap">
+            <button v-for="file in item.attachments" :key="file.id || file.name" @click="downloadAttachment(file)">
+              {{ file.name }}
+            </button>
+          </div>
         </article>
       </div>
       <div v-else class="empty card">未命中，已写入高频未命中词队列。</div>

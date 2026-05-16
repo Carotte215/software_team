@@ -20,6 +20,8 @@ export function createApi(sessionRef) {
     getSessionInfo: () => call({ path: "/session" }),
     getCurrentStudent: () => call({ path: "/student/me" }),
     listStudents: () => call({ path: "/students" }),
+    getStudentFieldPolicy: () => call({ path: "/students/field-policy" }),
+    updateStudent: (id, payload) => call({ path: `/students/${id}`, method: "PATCH", data: payload }),
     exportStudents: () => requestBlob({ path: "/students/export", session: sessionRef.value }),
     importStudents: (file, options = {}) => {
       const data = new FormData();
@@ -44,6 +46,9 @@ export function createApi(sessionRef) {
     getPartyProgress: () => call({ path: "/party/progress" }),
     completePartyTask: (taskId) => call({ path: `/party/tasks/${taskId}/done`, method: "POST" }),
     advancePartyStage: (payload) => call({ path: "/workbench/party/advance", method: "POST", data: payload }),
+    getPartyTimeline: () => call({ path: "/workbench/party/timeline" }),
+    updatePartyTimeline: (rules) => call({ path: "/workbench/party/timeline", method: "PUT", data: { rules } }),
+    refreshPartyReminders: () => call({ path: "/workbench/party/reminders/refresh", method: "POST" }),
 
     listApplications: (query = {}) => call({ path: "/applications", data: query }),
     getApplication: (id) => call({ path: `/applications/${id}` }),
@@ -73,6 +78,7 @@ export function createApi(sessionRef) {
     getInbox: () => call({ path: "/messages/inbox" }),
     markMessageRead: (id) => call({ path: `/messages/${id}/read`, method: "POST" }),
     publishNotice: (payload) => call({ path: "/workbench/notices/publish", method: "POST", data: payload }),
+    dispatchScheduledNotices: () => call({ path: "/workbench/notices/scheduled/dispatch", method: "POST" }),
 
     listHonors: (query = {}) => call({ path: "/honors", data: query }),
     createHonor: (payload) => call({ path: "/honors", method: "POST", data: payload }),
@@ -84,7 +90,7 @@ export function createApi(sessionRef) {
     uploadTranscript: (meta) => call({ path: "/academic/transcript", method: "POST", data: { meta } }),
 
     getWorkbenchSummary: () => call({ path: "/workbench/summary" }),
-    listWorkbenchBatches: () => call({ path: "/workbench/batches" }),
+    listWorkbenchBatches: (query = {}) => call({ path: "/workbench/batches", data: query }),
     listKnowledgeMisses: () => call({ path: "/workbench/knowledge/misses" }),
     listSmsSimulations: () => call({ path: "/workbench/sms" }),
     listAcademicRisks: () => call({ path: "/workbench/academic/risks" }),

@@ -36,6 +36,7 @@ class NoticePublish(BaseModel):
     tags: list[str] = Field(default_factory=list)
     target_rule: dict[str, Any] = Field(default_factory=lambda: {"kind": "all"}, alias="targetRule")
     source: str = "管理老师"
+    scheduled_at: int = Field(default=0, alias="scheduledAt")
 
 
 class AcademicProgressPut(BaseModel):
@@ -53,6 +54,7 @@ class KnowledgeCreate(BaseModel):
     summary: str
     body: str = ""
     sensitive_hint: bool = Field(default=False, alias="sensitiveHint")
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class KnowledgeUpdate(KnowledgeCreate):
@@ -71,6 +73,8 @@ class HonorCreate(BaseModel):
     grade: str = ""
     category: str = ""
     intro: str = ""
+    visibility: str = "public"
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ApiMessage(BaseModel):

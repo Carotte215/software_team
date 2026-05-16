@@ -216,6 +216,12 @@ textarea {
   flex-wrap: wrap;
 }
 
+.row input,
+.row select {
+  width: auto;
+  min-width: 132px;
+}
+
 .toolbar {
   display: grid;
   grid-template-columns: 1fr 160px auto;

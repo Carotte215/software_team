@@ -2,6 +2,7 @@
 import { inject, onMounted, reactive, ref } from "vue";
 
 const api = inject("api");
+const toast = inject("toast");
 const filter = reactive({ major: "", category: "" });
 const honors = ref([]);
 
@@ -11,6 +12,21 @@ async function load() {
   const data = Object.fromEntries(Object.entries(filter).filter(([, value]) => value));
   const res = await api.listHonors(data);
   honors.value = res.list || [];
+}
+
+function saveBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function downloadAttachment(file) {
+  const blob = await api.downloadFile(file);
+  saveBlob(blob, file.name || "honor-attachment");
+  toast("证明材料下载已开始");
 }
 </script>
 
@@ -35,6 +51,11 @@ async function load() {
         <span class="tag green">{{ item.category }}</span>
       </p>
       <p class="muted">{{ item.intro }}</p>
+      <div v-if="item.attachments?.length" class="row wrap">
+        <button v-for="file in item.attachments" :key="file.id || file.name" @click="downloadAttachment(file)">
+          {{ file.name }}
+        </button>
+      </div>
     </article>
   </div>
 </template>

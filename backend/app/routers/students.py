@@ -29,6 +29,39 @@ FIELD_ALIASES = {
     "hometown": ["hometown", "生源地", "户籍地"],
 }
 REQUIRED_FIELDS = ["studentId", "name", "grade", "major", "className"]
+FIELD_POLICY = {
+    "teacher": {
+        "visible": ["studentId", "name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "extension"],
+        "editable": ["name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "extension"],
+        "exportable": ["studentId", "name", "grade", "major", "className", "nation", "phoneMasked", "politicalStatus", "tutor"],
+    },
+    "coordinator": {
+        "visible": ["studentId", "name", "grade", "major", "className", "nation", "politicalStatus", "extension"],
+        "editable": ["politicalStatus", "extension"],
+        "exportable": [],
+    },
+    "leader": {
+        "visible": ["studentId", "name", "grade", "major", "className", "nation", "phoneMasked", "politicalStatus", "tutor", "hometown", "extension"],
+        "editable": [],
+        "exportable": [],
+    },
+    "student": {
+        "visible": ["studentId", "name", "grade", "major", "className", "nation", "phoneMasked", "politicalStatus", "tutor", "extension"],
+        "editable": [],
+        "exportable": [],
+    },
+}
+MODEL_FIELDS = {
+    "name": "name",
+    "grade": "grade",
+    "major": "major",
+    "className": "class_name",
+    "nation": "nation",
+    "phone": "phone",
+    "politicalStatus": "political_status",
+    "tutor": "tutor",
+    "hometown": "hometown",
+}
 
 
 @router.get("/student/me")
@@ -48,6 +81,42 @@ def list_students(db: Session = Depends(get_db), session: CurrentSession = Depen
         stmt = stmt.where(Student.student_id.in_(scope))
     rows = db.scalars(stmt.order_by(Student.grade.desc(), Student.student_id)).all()
     return {"list": [student_public(row, session.role) for row in rows]}
+
+
+@router.get("/students/field-policy")
+def field_policy(session: CurrentSession = Depends(get_current_session)) -> dict:
+    require_roles(session, TEACHER, LEADER, COORDINATOR)
+    return {"role": session.role, **FIELD_POLICY.get(session.role, FIELD_POLICY["student"])}
+
+
+@router.patch("/students/{student_id}")
+def update_student(
+    student_id: str,
+    payload: dict,
+    db: Session = Depends(get_db),
+    session: CurrentSession = Depends(get_current_session),
+) -> dict:
+    require_roles(session, TEACHER, COORDINATOR)
+    row = db.get(Student, student_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="student not found")
+    scope = scoped_student_ids(db, session)
+    if scope is not None and student_id not in set(db.scalars(scope).all()):
+        raise HTTPException(status_code=403, detail="out of scope")
+    allowed = set(FIELD_POLICY[session.role]["editable"])
+    rejected = [field for field in payload.keys() if field not in allowed]
+    if rejected:
+        raise HTTPException(status_code=400, detail={"message": "field not editable", "fields": rejected})
+    for field, attr in MODEL_FIELDS.items():
+        if field in payload:
+            setattr(row, attr, str(payload[field]).strip())
+    if "extension" in payload:
+        if not isinstance(payload["extension"], dict):
+            raise HTTPException(status_code=400, detail="extension must be object")
+        row.extension = payload["extension"]
+    audit(db, session, "student_update", student_id, {"fields": sorted(payload.keys())})
+    db.commit()
+    return student_public(row, session.role)
 
 
 @router.get("/students/export")

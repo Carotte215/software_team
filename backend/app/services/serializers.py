@@ -127,10 +127,15 @@ def academic_progress(row: AcademicProgress | None) -> dict | None:
 
 
 def batch(row: NoticeBatch) -> dict:
+    target_rule = row.target_rule or {}
+    schedule = target_rule.get("_schedule", {})
     return {
         "id": row.id,
         "title": row.title,
-        "targetRule": row.target_rule or {},
+        "targetRule": {key: value for key, value in target_rule.items() if not key.startswith("_")},
+        "status": schedule.get("status", "sent"),
+        "scheduledAt": schedule.get("scheduledAt"),
+        "noticeId": schedule.get("noticeId"),
         "createdAt": dt_ms(row.created_at),
         "channels": row.channels or [],
     }

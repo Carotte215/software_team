@@ -42,6 +42,7 @@ def create_knowledge(payload: KnowledgeCreate, db: Session = Depends(get_db), se
         summary=payload.summary,
         body=payload.body,
         sensitive_hint=payload.sensitive_hint,
+        attachments=payload.attachments,
     )
     db.add(row)
     audit(db, session, "knowledge_create", row.id)
@@ -75,6 +76,7 @@ def update_knowledge(
     row.summary = payload.summary
     row.body = payload.body
     row.sensitive_hint = payload.sensitive_hint
+    row.attachments = payload.attachments
     row.online = payload.online
     audit(db, session, "knowledge_update", item_id)
     db.commit()

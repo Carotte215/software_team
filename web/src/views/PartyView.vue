@@ -10,6 +10,10 @@ const current = computed(() => {
   if (!flow.value) return null;
   return flow.value.stages.find((item) => item.key === flow.value.currentKey);
 });
+const currentRule = computed(() => {
+  if (!flow.value) return null;
+  return flow.value.timelineRules?.find((item) => item.stageKey === flow.value.currentKey);
+});
 
 onMounted(load);
 
@@ -29,6 +33,9 @@ async function markDone(taskId) {
     <div class="card">
       <h3>{{ flow.flowName }}</h3>
       <p class="muted">当前阶段：<strong>{{ current?.name }}</strong>。提醒任务后续可接微信订阅消息或邮件。</p>
+      <p v-if="currentRule" class="muted">
+        标准周期 {{ currentRule.durationDays }} 天，提前 {{ currentRule.remindBeforeDays }} 天提醒；材料要求：{{ currentRule.material }}
+      </p>
     </div>
 
     <div class="grid cols-2">
