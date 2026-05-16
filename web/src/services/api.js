@@ -49,6 +49,16 @@ export function createApi(sessionRef) {
     getPartyTimeline: () => call({ path: "/workbench/party/timeline" }),
     updatePartyTimeline: (rules) => call({ path: "/workbench/party/timeline", method: "PUT", data: { rules } }),
     refreshPartyReminders: () => call({ path: "/workbench/party/reminders/refresh", method: "POST" }),
+    listTheoryQuestions: () => call({ path: "/theory/questions" }),
+    submitTheoryAttempt: (answers) => call({ path: "/theory/attempt", method: "POST", data: { answers } }),
+    listTheoryQuestionAdmin: () => call({ path: "/theory/workbench/questions" }),
+    saveTheoryQuestions: (questions) => call({ path: "/theory/workbench/questions", method: "PUT", data: { questions } }),
+    importTheoryQuestions: (file, options = {}) => {
+      const data = new FormData();
+      data.append("file", file);
+      data.append("dryRun", String(options.dryRun !== false));
+      return call({ path: "/theory/workbench/questions/import", method: "POST", data });
+    },
 
     listApplications: (query = {}) => call({ path: "/applications", data: query }),
     getApplication: (id) => call({ path: `/applications/${id}` }),
@@ -86,6 +96,14 @@ export function createApi(sessionRef) {
 
     getAcademicReport: () => call({ path: "/academic/report" }),
     getAcademicPlan: () => call({ path: "/academic/plan" }),
+    listAcademicPlans: () => call({ path: "/academic/workbench/plans" }),
+    saveAcademicPlan: (payload) => call({ path: "/academic/workbench/plans", method: "PUT", data: payload }),
+    importAcademicPlans: (file, options = {}) => {
+      const data = new FormData();
+      data.append("file", file);
+      data.append("dryRun", String(options.dryRun !== false));
+      return call({ path: "/academic/workbench/plans/import", method: "POST", data });
+    },
     saveAcademicProgress: (modules) => call({ path: "/academic/progress", method: "PUT", data: { modules } }),
     uploadTranscript: (meta) => call({ path: "/academic/transcript", method: "POST", data: { meta } }),
 

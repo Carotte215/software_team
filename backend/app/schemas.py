@@ -43,6 +43,12 @@ class AcademicProgressPut(BaseModel):
     modules: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class AcademicPlanPut(BaseModel):
+    grade: str
+    major: str
+    modules: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class TranscriptMetaCreate(BaseModel):
     meta: dict[str, Any] = Field(default_factory=dict)
 

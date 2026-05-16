@@ -31,6 +31,11 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
 
   if (parts[0] === "party" && parts[1] === "progress") return partyProgress(session.studentId);
   if (parts[0] === "party" && parts[1] === "tasks" && parts[3] === "done" && verb === "POST") return completePartyTask(session.studentId, parts[2]);
+  if (parts[0] === "theory" && parts[1] === "questions" && verb === "GET") return theoryQuestions(session);
+  if (parts[0] === "theory" && parts[1] === "attempt" && verb === "POST") return submitTheoryAttempt(data, session);
+  if (parts[0] === "theory" && parts[1] === "workbench" && parts[2] === "questions" && parts.length === 3 && verb === "GET") return theoryQuestionAdmin(session);
+  if (parts[0] === "theory" && parts[1] === "workbench" && parts[2] === "questions" && parts.length === 3 && verb === "PUT") return saveTheoryQuestions(data, session);
+  if (parts[0] === "theory" && parts[1] === "workbench" && parts[2] === "questions" && parts[3] === "import") return importTheoryQuestions(data, session);
 
   if (parts[0] === "notices" && parts.length === 1) return { list: readDb().notices.filter((item) => item.publishedAt <= Date.now()).slice().sort((a, b) => b.publishedAt - a.publishedAt) };
   if (parts[0] === "notices" && parts[1]) return readDb().notices.find((n) => n.id === parts[1]);
@@ -47,6 +52,9 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
   if (parts[0] === "honors" && parts.length === 1 && verb === "GET") return honors(data, session);
   if (parts[0] === "honors" && parts.length === 1 && verb === "POST") return createHonor(data, session);
   if (parts[0] === "honors" && parts[1] && verb === "PUT") return updateHonor(parts[1], data, session);
+  if (parts[0] === "academic" && parts[1] === "workbench" && parts[2] === "plans" && parts.length === 3 && verb === "GET") return listAcademicPlans(session);
+  if (parts[0] === "academic" && parts[1] === "workbench" && parts[2] === "plans" && parts.length === 3 && verb === "PUT") return saveAcademicPlan(data, session);
+  if (parts[0] === "academic" && parts[1] === "workbench" && parts[2] === "plans" && parts[3] === "import") return importAcademicPlans(data, session);
   if (parts[0] === "academic" && parts[1] === "report") return academicReport(session.studentId);
   if (parts[0] === "academic" && parts[1] === "plan") return academicPlan(session.studentId);
   if (parts[0] === "academic" && parts[1] === "progress" && verb === "PUT") return saveAcademicProgress(data, session);
@@ -350,6 +358,107 @@ function completePartyTask(studentId, taskId) {
   return { ok: true };
 }
 
+function defaultTheoryQuestions() {
+  return [
+    { id: "theory_q1", stem: "入党申请人递交申请书后，通常应接受党组织的谈话和培养教育。", type: "single", options: ["正确", "错误"], answer: "正确", explanation: "入党申请提交后，党组织会安排谈话并开展培养教育。", category: "入党流程", online: true },
+    { id: "theory_q2", stem: "发展对象阶段通常需要完成政审、公示和集中培训等材料或环节。", type: "single", options: ["正确", "错误"], answer: "正确", explanation: "发展对象阶段需按组织要求完成相关审查和培训材料。", category: "发展对象", online: true },
+  ];
+}
+
+function theoryBank(db = readDb()) {
+  db.theory = db.theory || { questions: defaultTheoryQuestions(), attempts: [] };
+  db.theory.questions = db.theory.questions?.length ? db.theory.questions : defaultTheoryQuestions();
+  db.theory.attempts = db.theory.attempts || [];
+  return db.theory;
+}
+
+function publicTheoryQuestion(item) {
+  const { answer, ...rest } = item;
+  return rest;
+}
+
+function theoryQuestions(session) {
+  const bank = theoryBank();
+  const attempts = bank.attempts.filter((item) => item.studentId === session.studentId);
+  return { list: bank.questions.filter((item) => item.online !== false).map(publicTheoryQuestion), latestAttempt: attempts[0] || null };
+}
+
+function submitTheoryAttempt(data, session) {
+  let result;
+  withDb((db) => {
+    const bank = theoryBank(db);
+    const questions = bank.questions.filter((item) => item.online !== false);
+    let correct = 0;
+    const details = questions.map((question) => {
+      const answer = data.answers?.[question.id] || "";
+      const ok = answer === question.answer;
+      if (ok) correct += 1;
+      return { id: question.id, stem: question.stem, answer, correctAnswer: question.answer, correct: ok, explanation: question.explanation };
+    });
+    result = { id: uid("attempt"), studentId: session.studentId, at: Date.now(), total: questions.length, correct, score: questions.length ? Math.round((correct * 1000) / questions.length) / 10 : 0, details };
+    bank.attempts.unshift(result);
+    appendAudit(db, session, "theory_attempt", result.id);
+  });
+  return result;
+}
+
+function theoryQuestionAdmin(session) {
+  if (![ROLES.TEACHER, ROLES.LEADER].includes(session.role)) throw new Error("FORBIDDEN");
+  return { list: theoryBank().questions };
+}
+
+function saveTheoryQuestions(data, session) {
+  requireTeacher(session);
+  const questions = (data.questions || []).map(normalizeTheoryQuestion);
+  withDb((db) => {
+    theoryBank(db).questions = questions;
+    appendAudit(db, session, "theory_questions_save", "theory");
+  });
+  return { ok: true, list: questions };
+}
+
+async function importTheoryQuestions(data, session) {
+  requireTeacher(session);
+  const file = typeof FormData !== "undefined" && data instanceof FormData ? data.get("file") : null;
+  const dryRun = data.get("dryRun") !== "false";
+  const rows = parseTheoryCsv(file ? await file.text() : "");
+  const errors = validateTheoryRows(rows);
+  const questions = errors.length ? [] : rows.map(normalizeTheoryQuestion);
+  if (dryRun || errors.length) return { ok: !errors.length, dryRun: true, total: rows.length, questions, errors };
+  withDb((db) => {
+    theoryBank(db).questions = questions;
+    appendAudit(db, session, "theory_questions_import", file?.name || "theory.csv");
+  });
+  return { ok: true, dryRun: false, total: rows.length, questions, errors: [] };
+}
+
+function normalizeTheoryQuestion(row) {
+  const options = Array.isArray(row.options) ? row.options : String(row.options || "").replace("；", ";").split(";").map((item) => item.trim()).filter(Boolean);
+  return { id: row.id || uid("theory"), stem: row.stem || "", type: row.type || "single", options, answer: row.answer || "", explanation: row.explanation || "", category: row.category || "理论知识", online: row.online !== false };
+}
+
+function parseTheoryCsv(text) {
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return [];
+  const headers = lines[0].split(",").map((item) => item.trim());
+  return lines.slice(1).map((line, index) => {
+    const values = line.split(",").map((item) => item.trim());
+    const raw = Object.fromEntries(headers.map((header, i) => [header, values[i] || ""]));
+    return { row: index + 2, stem: raw["题干"] || raw.stem || "", options: raw["选项"] || raw.options || "", answer: raw["答案"] || raw.answer || "", explanation: raw["解析"] || raw.explanation || "", category: raw["分类"] || raw.category || "理论知识", online: !["false", "0", "否"].includes(raw["上线"] || raw.online || "true") };
+  });
+}
+
+function validateTheoryRows(rows) {
+  const errors = [];
+  rows.forEach((row) => {
+    const options = String(row.options || "").replace("；", ";").split(";").map((item) => item.trim()).filter(Boolean);
+    if (!row.stem || !row.answer) errors.push({ row: row.row, field: "stem,answer", message: "题干和答案必填" });
+    else if (options.length < 2) errors.push({ row: row.row, field: "options", message: "至少需要 2 个选项，使用分号分隔" });
+    else if (!options.includes(row.answer)) errors.push({ row: row.row, field: "answer", message: "答案必须包含在选项中" });
+  });
+  return errors;
+}
+
 function getPartyRules(db = readDb()) {
   return db.partyTimelineRules || [
     { stageKey: "applicant", durationDays: 30, remindBeforeDays: 7, material: "入党申请书、谈话记录" },
@@ -613,6 +722,92 @@ function academicPlan(studentId) {
   const s = db.students.find((x) => x.studentId === studentId);
   const key = `${s.grade}|${s.major}`;
   return { plan: db.academic.plansByKey[key], progress: db.academic.progressByStudent[studentId] };
+}
+
+function listAcademicPlans(session) {
+  if (![ROLES.TEACHER, ROLES.LEADER].includes(session.role)) throw new Error("FORBIDDEN");
+  return { list: Object.entries(readDb().academic.plansByKey).map(([key, plan]) => ({ key, ...plan })) };
+}
+
+function saveAcademicPlan(data, session) {
+  requireTeacher(session);
+  const key = `${data.grade}|${data.major}`;
+  const plan = {
+    key,
+    grade: data.grade,
+    major: data.major,
+    modules: (data.modules || []).map((item) => ({ key: item.key, name: item.name, required: Number(item.required || 0) })),
+  };
+  withDb((db) => {
+    db.academic.plansByKey[key] = plan;
+    appendAudit(db, session, "academic_plan_save", key);
+  });
+  return plan;
+}
+
+async function importAcademicPlans(data, session) {
+  requireTeacher(session);
+  const file = typeof FormData !== "undefined" && data instanceof FormData ? data.get("file") : null;
+  const dryRun = data.get("dryRun") !== "false";
+  const rows = parseAcademicPlanCsv(file ? await file.text() : "");
+  const errors = validateAcademicPlanRows(rows);
+  const plans = errors.length ? [] : groupAcademicPlanRows(rows);
+  if (dryRun || errors.length) return { ok: !errors.length, dryRun: true, total: rows.length, plans, errors };
+  withDb((db) => {
+    plans.forEach((plan) => {
+      db.academic.plansByKey[`${plan.grade}|${plan.major}`] = { key: `${plan.grade}|${plan.major}`, ...plan };
+    });
+    appendAudit(db, session, "academic_plan_import", file?.name || "academic_plans.csv");
+  });
+  return { ok: true, dryRun: false, total: rows.length, plans, errors: [] };
+}
+
+function parseAcademicPlanCsv(text) {
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return [];
+  const headers = lines[0].split(",").map((item) => item.trim());
+  return lines.slice(1).map((line, index) => {
+    const values = line.split(",").map((item) => item.trim());
+    const raw = Object.fromEntries(headers.map((header, i) => [header, values[i] || ""]));
+    return {
+      row: index + 2,
+      grade: raw["年级"] || raw.grade || "",
+      major: raw["专业"] || raw.major || "",
+      key: raw["模块key"] || raw.key || "",
+      name: raw["模块名称"] || raw.name || "",
+      required: raw["要求学分"] || raw.required || "",
+    };
+  });
+}
+
+function validateAcademicPlanRows(rows) {
+  const errors = [];
+  const seen = new Set();
+  rows.forEach((row) => {
+    const missing = ["grade", "major", "key", "name", "required"].filter((field) => !row[field]);
+    if (missing.length) {
+      errors.push({ row: row.row, field: missing.join(","), message: "必填字段缺失" });
+      return;
+    }
+    if (Number.isNaN(Number(row.required))) {
+      errors.push({ row: row.row, field: "required", message: "要求学分必须是数字" });
+      return;
+    }
+    const dedup = `${row.grade}|${row.major}|${row.key}`;
+    if (seen.has(dedup)) errors.push({ row: row.row, field: "key", message: "同一培养方案内模块 key 重复" });
+    seen.add(dedup);
+  });
+  return errors;
+}
+
+function groupAcademicPlanRows(rows) {
+  const grouped = {};
+  rows.forEach((row) => {
+    const id = `${row.grade}|${row.major}`;
+    grouped[id] = grouped[id] || { grade: row.grade, major: row.major, modules: [] };
+    grouped[id].modules.push({ key: row.key, name: row.name, required: Number(row.required) });
+  });
+  return Object.values(grouped);
 }
 
 function academicReport(studentId) {

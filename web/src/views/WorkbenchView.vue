@@ -19,11 +19,22 @@ const knowledgeItems = ref([]);
 const students = ref([]);
 const honors = ref([]);
 const academicRisks = ref([]);
+const academicPlans = ref([]);
 const partyTimeline = ref(null);
 const fieldPolicy = ref(null);
 const studentImportFile = ref(null);
 const studentImportOverwrite = ref(false);
 const studentImportResult = ref(null);
+const academicPlanImportFile = ref(null);
+const academicPlanImportResult = ref(null);
+const theoryQuestions = ref([]);
+const theoryImportFile = ref(null);
+const theoryImportResult = ref(null);
+const academicPlanForm = reactive({
+  grade: "",
+  major: "",
+  modulesText: "[]",
+});
 const studentForm = reactive({
   studentId: "",
   name: "",
@@ -79,6 +90,15 @@ const honorForm = reactive({
   visibility: "public",
   attachments: [],
 });
+const theoryForm = reactive({
+  id: "",
+  stem: "",
+  optionsText: "正确;错误",
+  answer: "正确",
+  explanation: "",
+  category: "理论知识",
+  online: true,
+});
 
 onMounted(load);
 
@@ -94,6 +114,8 @@ async function load() {
   fieldPolicy.value = await api.getStudentFieldPolicy().catch(() => null);
   honors.value = (await api.listHonors().catch(() => ({ list: [] }))).list || [];
   academicRisks.value = (await api.listAcademicRisks().catch(() => ({ list: [] }))).list || [];
+  academicPlans.value = (await api.listAcademicPlans().catch(() => ({ list: [] }))).list || [];
+  theoryQuestions.value = (await api.listTheoryQuestionAdmin().catch(() => ({ list: [] }))).list || [];
   partyTimeline.value = await api.getPartyTimeline().catch(() => null);
   if (!partyForm.studentId && students.value.length) partyForm.studentId = students.value[0].studentId;
   logs.value = (await api.listAuditLogs({ limit: 20 }).catch(() => ({ list: [] }))).list || [];
@@ -404,6 +426,127 @@ function riskClass(level) {
   return "gray";
 }
 
+function editAcademicPlan(item) {
+  Object.assign(academicPlanForm, {
+    grade: item.grade || "",
+    major: item.major || "",
+    modulesText: JSON.stringify(item.modules || [], null, 2),
+  });
+}
+
+async function saveAcademicPlan() {
+  let modules = [];
+  try {
+    modules = JSON.parse(academicPlanForm.modulesText || "[]");
+  } catch (error) {
+    toast("培养方案模块必须是 JSON 数组");
+    return;
+  }
+  if (!academicPlanForm.grade.trim() || !academicPlanForm.major.trim() || !modules.length) {
+    toast("请填写年级、专业和模块列表");
+    return;
+  }
+  await api.saveAcademicPlan({ grade: academicPlanForm.grade, major: academicPlanForm.major, modules });
+  toast("培养方案已保存");
+  await load();
+}
+
+function resetTheoryForm() {
+  Object.assign(theoryForm, {
+    id: "",
+    stem: "",
+    optionsText: "正确;错误",
+    answer: "正确",
+    explanation: "",
+    category: "理论知识",
+    online: true,
+  });
+}
+
+function editTheoryQuestion(item) {
+  Object.assign(theoryForm, {
+    id: item.id,
+    stem: item.stem,
+    optionsText: (item.options || []).join(";"),
+    answer: item.answer,
+    explanation: item.explanation || "",
+    category: item.category || "理论知识",
+    online: item.online !== false,
+  });
+}
+
+async function saveTheoryQuestion() {
+  if (!theoryForm.stem.trim() || !theoryForm.answer.trim()) {
+    toast("请填写题干和答案");
+    return;
+  }
+  const row = {
+    id: theoryForm.id || `theory_${Date.now()}`,
+    stem: theoryForm.stem,
+    type: "single",
+    options: theoryForm.optionsText.split(/[;；]/).map((item) => item.trim()).filter(Boolean),
+    answer: theoryForm.answer,
+    explanation: theoryForm.explanation,
+    category: theoryForm.category,
+    online: theoryForm.online,
+  };
+  const list = theoryForm.id
+    ? theoryQuestions.value.map((item) => (item.id === theoryForm.id ? row : item))
+    : [row, ...theoryQuestions.value];
+  await api.saveTheoryQuestions(list);
+  toast("理论题库已保存");
+  resetTheoryForm();
+  await load();
+}
+
+function onTheoryImportFile(event) {
+  theoryImportFile.value = event.target.files?.[0] || null;
+  theoryImportResult.value = null;
+}
+
+async function previewTheoryImport() {
+  if (!theoryImportFile.value) {
+    toast("请选择题库 CSV 文件");
+    return;
+  }
+  theoryImportResult.value = await api.importTheoryQuestions(theoryImportFile.value, { dryRun: true });
+  toast(theoryImportResult.value.errors?.length ? "题库预检发现错误" : "题库预检通过");
+}
+
+async function commitTheoryImport() {
+  if (!theoryImportFile.value) {
+    toast("请选择题库 CSV 文件");
+    return;
+  }
+  theoryImportResult.value = await api.importTheoryQuestions(theoryImportFile.value, { dryRun: false });
+  toast(theoryImportResult.value.ok ? "题库已导入" : "导入失败，请处理错误行");
+  if (theoryImportResult.value.ok) await load();
+}
+
+function onAcademicPlanImportFile(event) {
+  academicPlanImportFile.value = event.target.files?.[0] || null;
+  academicPlanImportResult.value = null;
+}
+
+async function previewAcademicPlanImport() {
+  if (!academicPlanImportFile.value) {
+    toast("请选择培养方案 CSV 文件");
+    return;
+  }
+  academicPlanImportResult.value = await api.importAcademicPlans(academicPlanImportFile.value, { dryRun: true });
+  toast(academicPlanImportResult.value.errors?.length ? "培养方案预检发现错误" : "培养方案预检通过");
+}
+
+async function commitAcademicPlanImport() {
+  if (!academicPlanImportFile.value) {
+    toast("请选择培养方案 CSV 文件");
+    return;
+  }
+  academicPlanImportResult.value = await api.importAcademicPlans(academicPlanImportFile.value, { dryRun: false });
+  toast(academicPlanImportResult.value.ok ? "培养方案已导入" : "导入失败，请处理错误行");
+  if (academicPlanImportResult.value.ok) await load();
+}
+
 async function saveHonor() {
   if (!honorForm.title.trim() || !honorForm.winner.trim()) {
     toast("请填写荣誉名称和获奖人");
@@ -543,6 +686,52 @@ async function saveHonor() {
       <p class="muted">保存规则后点击刷新提醒，系统会按当前阶段为学生生成或更新待办任务。</p>
     </section>
 
+    <section class="card" v-if="[ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
+      <div class="row between">
+        <h3>理论自测题库</h3>
+        <span class="tag gray">{{ theoryQuestions.length }} 题</span>
+      </div>
+      <div class="grid cols-2">
+        <div class="stack">
+          <article v-for="item in theoryQuestions.slice(0, 8)" :key="item.id" class="card">
+            <div class="row between">
+              <strong>{{ item.stem }}</strong>
+              <span class="tag" :class="item.online === false ? 'gray' : 'green'">{{ item.online === false ? "下线" : "上线" }}</span>
+            </div>
+            <p class="muted">{{ item.category }} · 答案 {{ item.answer }}</p>
+            <button v-if="session.role === ROLES.TEACHER" @click="editTheoryQuestion(item)">编辑</button>
+          </article>
+        </div>
+        <form class="form-grid" @submit.prevent="saveTheoryQuestion">
+          <input v-model="theoryForm.stem" :disabled="session.role !== ROLES.TEACHER" placeholder="题干" />
+          <input v-model="theoryForm.category" :disabled="session.role !== ROLES.TEACHER" placeholder="分类" />
+          <input v-model="theoryForm.optionsText" :disabled="session.role !== ROLES.TEACHER" placeholder="选项，用分号分隔" />
+          <input v-model="theoryForm.answer" :disabled="session.role !== ROLES.TEACHER" placeholder="答案" />
+          <textarea v-model="theoryForm.explanation" class="span-2" :disabled="session.role !== ROLES.TEACHER" placeholder="解析"></textarea>
+          <label class="row">
+            <input v-model="theoryForm.online" type="checkbox" :disabled="session.role !== ROLES.TEACHER" />
+            上线
+          </label>
+          <label v-if="session.role === ROLES.TEACHER">
+            CSV 导入题库
+            <input type="file" accept=".csv" @change="onTheoryImportFile" />
+          </label>
+          <div class="span-2 row wrap" v-if="session.role === ROLES.TEACHER">
+            <button class="primary">{{ theoryForm.id ? "保存题目" : "新增题目" }}</button>
+            <button type="button" @click="resetTheoryForm">清空</button>
+            <button type="button" @click="previewTheoryImport">预检导入</button>
+            <button type="button" @click="commitTheoryImport">确认导入</button>
+          </div>
+          <div v-if="theoryImportResult" class="span-2 card">
+            <p class="muted">共 {{ theoryImportResult.total }} 行，预检题目 {{ theoryImportResult.questions?.length || 0 }} 题</p>
+            <p v-for="error in theoryImportResult.errors || []" :key="`${error.row}-${error.field}`" class="muted">
+              第 {{ error.row }} 行 · {{ error.field }} · {{ error.message }}
+            </p>
+          </div>
+        </form>
+      </div>
+    </section>
+
     <section class="card" v-if="session.role === ROLES.TEACHER">
       <div class="row between">
         <h3>学生画像导出</h3>
@@ -628,6 +817,44 @@ async function saveHonor() {
           <p v-else class="muted">暂无明显学分缺口或缺少学业数据。</p>
         </article>
         <div v-if="!academicRisks.length" class="empty card">暂无学业风险数据</div>
+      </div>
+    </section>
+
+    <section class="card" v-if="[ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
+      <div class="row between">
+        <h3>培养方案维护</h3>
+        <span class="tag gray">{{ academicPlans.length }} 个方案</span>
+      </div>
+      <div class="grid cols-2">
+        <div class="stack">
+          <article v-for="item in academicPlans.slice(0, 6)" :key="item.key" class="card">
+            <div class="row between">
+              <strong>{{ item.grade }} · {{ item.major }}</strong>
+              <button v-if="session.role === ROLES.TEACHER" @click="editAcademicPlan(item)">编辑</button>
+            </div>
+            <p class="muted">{{ item.modules?.length || 0 }} 个模块 · 总要求 {{ (item.modules || []).reduce((sum, row) => sum + Number(row.required || 0), 0) }} 学分</p>
+          </article>
+        </div>
+        <form class="form-grid" @submit.prevent="saveAcademicPlan">
+          <input v-model="academicPlanForm.grade" :disabled="session.role !== ROLES.TEACHER" placeholder="年级，如 2024级" />
+          <input v-model="academicPlanForm.major" :disabled="session.role !== ROLES.TEACHER" placeholder="专业，如 软件工程" />
+          <textarea v-model="academicPlanForm.modulesText" class="span-2" :disabled="session.role !== ROLES.TEACHER" placeholder='[{"key":"major_core","name":"专业核心","required":28}]'></textarea>
+          <label class="span-2" v-if="session.role === ROLES.TEACHER">
+            CSV 导入培养方案
+            <input type="file" accept=".csv" @change="onAcademicPlanImportFile" />
+          </label>
+          <div class="span-2 row wrap" v-if="session.role === ROLES.TEACHER">
+            <button class="primary">保存方案</button>
+            <button type="button" @click="previewAcademicPlanImport">预检导入</button>
+            <button type="button" @click="commitAcademicPlanImport">确认导入</button>
+          </div>
+          <div v-if="academicPlanImportResult" class="span-2 card">
+            <p class="muted">共 {{ academicPlanImportResult.total }} 行，涉及 {{ academicPlanImportResult.plans?.length || 0 }} 个方案</p>
+            <p v-for="error in academicPlanImportResult.errors || []" :key="`${error.row}-${error.field}`" class="muted">
+              第 {{ error.row }} 行 · {{ error.field }} · {{ error.message }}
+            </p>
+          </div>
+        </form>
       </div>
     </section>
 

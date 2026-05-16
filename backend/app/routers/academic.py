@@ -1,12 +1,15 @@
+import csv
 from datetime import datetime, timezone
+from io import StringIO
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.deps import CurrentSession, get_current_session
 from app.models import AcademicPlan, AcademicProgress, Student
-from app.schemas import AcademicProgressPut, TranscriptMetaCreate
+from app.schemas import AcademicPlanPut, AcademicProgressPut, TranscriptMetaCreate
 from app.services.common import audit
 from app.services.serializers import academic_plan, academic_progress
 
@@ -65,3 +68,112 @@ def transcript(payload: TranscriptMetaCreate, db: Session = Depends(get_db), ses
     audit(db, session, "academic_transcript_meta", session.student_id, payload.meta)
     db.commit()
     return {"ok": True}
+
+
+@router.get("/workbench/plans")
+def list_plans(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+    if session.role not in {"teacher", "leader"}:
+        raise HTTPException(status_code=403, detail="forbidden")
+    rows = db.scalars(select(AcademicPlan).order_by(AcademicPlan.grade.desc(), AcademicPlan.major)).all()
+    return {"list": [academic_plan(row) for row in rows]}
+
+
+@router.put("/workbench/plans")
+def save_plan(payload: AcademicPlanPut, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+    if session.role != "teacher":
+        raise HTTPException(status_code=403, detail="forbidden")
+    modules = normalize_modules(payload.modules)
+    key = f"{payload.grade}|{payload.major}"
+    row = db.get(AcademicPlan, key)
+    if not row:
+        row = AcademicPlan(key=key, grade=payload.grade, major=payload.major, modules=modules)
+        db.add(row)
+    else:
+        row.grade = payload.grade
+        row.major = payload.major
+        row.modules = modules
+    audit(db, session, "academic_plan_save", key, {"modules": len(modules)})
+    db.commit()
+    return academic_plan(row)
+
+
+@router.post("/workbench/plans/import")
+async def import_plans(
+    file: UploadFile = File(...),
+    dry_run: bool = Form(default=True, alias="dryRun"),
+    db: Session = Depends(get_db),
+    session: CurrentSession = Depends(get_current_session),
+) -> dict:
+    if session.role != "teacher":
+        raise HTTPException(status_code=403, detail="forbidden")
+    rows = parse_plan_csv((await file.read()).decode("utf-8-sig"))
+    errors = validate_plan_rows(rows)
+    plans = group_plan_rows(rows) if not errors else []
+    if dry_run or errors:
+        return {"ok": not errors, "dryRun": True, "total": len(rows), "plans": plans, "errors": errors}
+    saved = []
+    for item in plans:
+        saved.append(save_plan(AcademicPlanPut(**item), db, session))
+    audit(db, session, "academic_plan_import", file.filename or "academic_plans.csv", {"plans": len(saved)})
+    db.commit()
+    return {"ok": True, "dryRun": False, "total": len(rows), "plans": saved, "errors": []}
+
+
+def normalize_modules(modules: list[dict]) -> list[dict]:
+    result = []
+    seen = set()
+    for item in modules:
+        key = str(item.get("key", "")).strip()
+        name = str(item.get("name", "")).strip()
+        if not key or not name or key in seen:
+            continue
+        seen.add(key)
+        result.append({"key": key, "name": name, "required": float(item.get("required", 0) or 0)})
+    return result
+
+
+def parse_plan_csv(text: str) -> list[dict]:
+    reader = csv.DictReader(StringIO(text))
+    rows = []
+    for index, row in enumerate(reader, start=2):
+        rows.append(
+            {
+                "row": index,
+                "grade": str(row.get("年级") or row.get("grade") or "").strip(),
+                "major": str(row.get("专业") or row.get("major") or "").strip(),
+                "key": str(row.get("模块key") or row.get("key") or "").strip(),
+                "name": str(row.get("模块名称") or row.get("name") or "").strip(),
+                "required": str(row.get("要求学分") or row.get("required") or "").strip(),
+            },
+        )
+    return rows
+
+
+def validate_plan_rows(rows: list[dict]) -> list[dict]:
+    errors = []
+    seen = set()
+    for row in rows:
+        missing = [field for field in ["grade", "major", "key", "name", "required"] if not row.get(field)]
+        if missing:
+            errors.append({"row": row["row"], "field": ",".join(missing), "message": "必填字段缺失"})
+            continue
+        try:
+            float(row["required"])
+        except ValueError:
+            errors.append({"row": row["row"], "field": "required", "message": "要求学分必须是数字"})
+            continue
+        dedup_key = (row["grade"], row["major"], row["key"])
+        if dedup_key in seen:
+            errors.append({"row": row["row"], "field": "key", "message": "同一培养方案内模块 key 重复"})
+            continue
+        seen.add(dedup_key)
+    return errors
+
+
+def group_plan_rows(rows: list[dict]) -> list[dict]:
+    grouped: dict[str, dict] = {}
+    for row in rows:
+        key = f"{row['grade']}|{row['major']}"
+        grouped.setdefault(key, {"grade": row["grade"], "major": row["major"], "modules": []})
+        grouped[key]["modules"].append({"key": row["key"], "name": row["name"], "required": float(row["required"])})
+    return list(grouped.values())
