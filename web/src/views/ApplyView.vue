@@ -125,7 +125,7 @@ async function openDetail(item) {
 
 async function downloadAttachment(file) {
   if (!file?.id && !file?.url) {
-    toast("该附件仅为本地元数据，暂无可下载文件");
+    toast("该附件暂无可下载文件，请联系管理员确认材料状态");
     return;
   }
   const blob = await api.downloadFile(file);

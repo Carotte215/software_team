@@ -55,7 +55,7 @@ export async function request({ path, method = "GET", data = {}, session }) {
 export async function requestBlob({ path, data = {}, session }) {
   if (config.mode === "mock") {
     const label = data?.name || path.split("/").filter(Boolean).pop() || "download";
-    return new Blob([`Mock download: ${label}\n`], { type: "text/plain;charset=utf-8" });
+    return new Blob([`文件下载：${label}\n`], { type: "text/plain;charset=utf-8" });
   }
   const res = await fetch(buildUrl(path, data).toString(), {
     method: "GET",

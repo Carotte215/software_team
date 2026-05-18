@@ -13,11 +13,11 @@ async function load() {
   student.value = await api.getCurrentStudent();
 }
 
-function resetDemo() {
-  if (!window.confirm("确定重置 Web 演示数据？")) return;
+function reloadLocalData() {
+  if (!window.confirm("确定清除本端缓存并重新载入基础数据？")) return;
   resetDb();
   reloadShell();
-  toast("已重置");
+  toast("已重新载入基础数据");
   load();
 }
 </script>
@@ -38,8 +38,8 @@ function resetDemo() {
     <section class="card">
       <h3>扩展画像</h3>
       <pre>{{ JSON.stringify(student.extension || {}, null, 2) }}</pre>
-      <p class="muted">字段级权限通过 API 层裁剪；后续可替换为后端字段白名单策略。</p>
-      <button class="danger" @click="resetDemo">重置 Web 演示数据</button>
+      <p class="muted">字段级权限由系统权限策略控制，敏感信息按角色脱敏展示。</p>
+      <button class="danger" @click="reloadLocalData">重新载入基础数据</button>
     </section>
   </div>
 </template>

@@ -71,7 +71,7 @@ def seed() -> None:
             db.add(TemplateFile(id=tid, name=name, scene=scene, format=fmt))
 
         for nid, title, tags, summary, published_at in NOTICES:
-            db.add(Notice(id=nid, title=title, tags=tags, summary=summary, content=f"{summary}\n\n请关注后续补充说明。", published_at=published_at))
+            db.add(Notice(id=nid, title=title, tags=tags, summary=summary, content=f"{summary}\n\n请关注补充说明。", published_at=published_at))
             for sid, *_ in STUDENTS:
                 db.add(
                     Message(

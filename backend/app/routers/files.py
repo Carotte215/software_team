@@ -98,7 +98,7 @@ def download_template(template_id: str, db: Session = Depends(get_db), session: 
     body = (
         f"{row.name}\n\n"
         f"适用场景：{row.scene or '通用'}\n"
-        "当前为课程演示环境生成的模板占位文件；正式部署后可替换为真实 Word/Excel/PDF 模板文件。\n"
+        "本文件由学院学生综合服务与党团管理平台生成，请结合学院发布的正式材料要求使用。\n"
     )
     audit(db, session, "template_download", template_id)
     db.commit()

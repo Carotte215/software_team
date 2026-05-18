@@ -160,7 +160,7 @@ def sent_channels(count: int) -> list[dict]:
     return [
         {"name": "站内", "sendOk": count, "sendFail": 0, "deliverOk": count, "deliverFail": 0, "read": 0, "observability": "可读"},
         {"name": "邮件", "sendOk": count, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "observability": "不可观测"},
-        {"name": "短信(模拟)", "sendOk": count, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "observability": "模拟"},
+        {"name": "短信", "sendOk": count, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "observability": "发送记录"},
     ]
 
 
@@ -168,7 +168,7 @@ def scheduled_channels(count: int) -> list[dict]:
     return [
         {"name": "站内", "sendOk": 0, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "target": count, "observability": "待发送"},
         {"name": "邮件", "sendOk": 0, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "target": count, "observability": "待发送"},
-        {"name": "短信(模拟)", "sendOk": 0, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "target": count, "observability": "待发送"},
+        {"name": "短信", "sendOk": 0, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "target": count, "observability": "待发送"},
     ]
 
 

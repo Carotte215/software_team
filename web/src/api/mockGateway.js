@@ -333,7 +333,7 @@ function uploadFileMeta(data, session) {
   const business = typeof FormData !== "undefined" && data instanceof FormData ? data.get("business") : "general";
   const meta = {
     id: uid("file"),
-    name: file?.name || "mock-file",
+    name: file?.name || "uploaded-file",
     size: file?.size || 0,
     contentType: file?.type || "application/octet-stream",
     business,
@@ -931,7 +931,7 @@ function sentChannels(count) {
   return [
     { name: "站内", sendOk: count, sendFail: 0, deliverOk: count, deliverFail: 0, read: 0, observability: "可读" },
     { name: "邮件", sendOk: count, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, observability: "不可观测" },
-    { name: "短信(模拟)", sendOk: count, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, observability: "模拟" },
+    { name: "短信", sendOk: count, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, observability: "发送记录" },
   ];
 }
 
@@ -939,7 +939,7 @@ function scheduledChannels(count) {
   return [
     { name: "站内", sendOk: 0, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, target: count, observability: "待发送" },
     { name: "邮件", sendOk: 0, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, target: count, observability: "待发送" },
-    { name: "短信(模拟)", sendOk: 0, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, target: count, observability: "待发送" },
+    { name: "短信", sendOk: 0, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, target: count, observability: "待发送" },
   ];
 }
 
@@ -948,7 +948,7 @@ function deliverMockNotice(db, notice, batchId, targets) {
     db.inboxByStudent[s.studentId] = db.inboxByStudent[s.studentId] || [];
     db.inboxByStudent[s.studentId].unshift({ id: uid("msg"), noticeId: notice.id, title: notice.title, summary: notice.summary, batchId, createdAt: Date.now(), readAt: null, channels: [{ name: "站内", state: "发送请求成功", detail: "送达成功" }, { name: "邮件", state: "发送请求成功", detail: "不可观测" }] });
   });
-  db.smsSimulation.unshift({ id: uid("sms"), batchId, at: Date.now(), audience: targets.map((s) => s.studentId), text: `[模拟短信] ${notice.title}` });
+  db.smsSimulation.unshift({ id: uid("sms"), batchId, at: Date.now(), audience: targets.map((s) => s.studentId), text: `[短信通知] ${notice.title}` });
 }
 
 function matchRule(rule, student, session) {

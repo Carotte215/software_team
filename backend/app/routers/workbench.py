@@ -105,10 +105,10 @@ def sms_simulation(db: Session = Depends(get_db), session: CurrentSession = Depe
                 "batchId": row.id,
                 "at": int(row.created_at.timestamp() * 1000) if row.created_at else None,
                 "audience": [],
-                "text": f"[模拟短信] {row.title}",
+                "text": f"[短信通知] {row.title}",
             }
             for row in rows
-            if any(channel.get("name") == "短信(模拟)" for channel in (row.channels or []))
+            if any(channel.get("name") == "短信" for channel in (row.channels or []))
         ],
     }
 

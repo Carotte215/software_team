@@ -20,7 +20,7 @@ const db = ref(readDb());
 const session = ref(getSession(db.value));
 const toastText = ref("");
 const loginBusy = ref(false);
-const loginForm = ref({ studentId: session.value.studentId, role: session.value.role, password: "demo123456" });
+const loginForm = ref({ studentId: session.value.studentId, role: session.value.role, password: "" });
 
 const api = createApi(session);
 const apiConfig = ref(api.getApiConfig());
@@ -48,6 +48,7 @@ const currentView = computed(() => viewMap[activeRoute.value] || HomeView);
 const currentTitle = computed(() => routes.find((item) => item.id === activeRoute.value)?.label || "首页");
 const mobileRoutes = computed(() => visibleNavRoutes.value.filter((item) => mobileRouteIds.includes(item.id)));
 const studentOptions = computed(() => db.value.students || []);
+const apiModeLabel = computed(() => (apiConfig.value.mode === "remote" ? "正式服务" : "离线数据"));
 
 window.addEventListener("hashchange", () => {
   route.value = readRoute();
@@ -84,7 +85,7 @@ function switchApiMode(mode) {
   } else if (!session.value.token) {
     setSession({ ...session.value, token: "web-mock" });
   }
-  showToast(mode === "remote" ? "已切换到 FastAPI 后端" : "已切换到本地 mock");
+  showToast(mode === "remote" ? "已连接后端服务" : "已切换为离线数据模式");
 }
 
 async function loginRemote() {
@@ -126,8 +127,8 @@ function reloadShell() {
   <div class="shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-title">学院学生综合服务</div>
-        <div class="brand-sub">Vue 3 + Vite · 模块化 API · 可切后端</div>
+        <div class="brand-title">学院学生综合服务与党团管理平台</div>
+        <div class="brand-sub">学生事务 · 党团管理 · 综合服务</div>
       </div>
       <nav class="nav">
         <a
@@ -147,10 +148,10 @@ function reloadShell() {
       <h1 class="page-title">{{ currentTitle }}</h1>
         <div class="session-panel">
           <span class="tag" :class="apiConfig.mode === 'remote' ? 'green' : 'gray'">
-            API {{ apiConfig.mode }}
+            数据源 {{ apiModeLabel }}
           </span>
-          <button v-if="apiConfig.mode !== 'remote'" @click="switchApiMode('remote')">Remote</button>
-          <button v-else @click="switchApiMode('mock')">Mock</button>
+          <button v-if="apiConfig.mode !== 'remote'" @click="switchApiMode('remote')">连接服务</button>
+          <button v-else @click="switchApiMode('mock')">离线模式</button>
           <template v-if="apiConfig.mode === 'remote'">
             <select v-model="loginForm.role" :disabled="Boolean(session.token)">
               <option v-for="(label, id) in ROLE_LABEL" :key="id" :value="id">{{ label }}</option>
@@ -160,7 +161,7 @@ function reloadShell() {
                 {{ student.name }} {{ student.studentId }}
               </option>
             </select>
-            <input v-if="!session.token" v-model="loginForm.password" type="password" placeholder="登录口令" />
+            <input v-if="!session.token" v-model="loginForm.password" type="password" placeholder="请输入登录口令" />
             <button v-if="!session.token" :disabled="loginBusy" @click="loginRemote">
               {{ loginBusy ? "登录中" : "登录" }}
             </button>
