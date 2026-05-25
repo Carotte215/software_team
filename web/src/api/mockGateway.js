@@ -9,7 +9,14 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
   const parts = path.replace(/^\//, "").split("/").filter(Boolean);
   await new Promise((resolve) => setTimeout(resolve, 60));
 
+  if (parts[0] === "auth" && parts[1] === "login" && verb === "POST") return login(data);
+  if (parts[0] === "runtime") return { ok: true, appName: "学院学生综合服务与党团管理平台", env: "mock", authMode: "mock", tokenHours: 12 };
+  if (parts[0] === "session") return { studentId: session.studentId, role: session.role, authMode: "mock", hasToken: Boolean(session.token) };
+
   if (parts[0] === "student" && parts[1] === "me") return getMe(session);
+  if (parts[0] === "students" && parts[1] === "import" && verb === "POST") return importStudents(data, session);
+  if (parts[0] === "students" && parts[1] === "field-policy") return studentFieldPolicy(session);
+  if (parts[0] === "students" && parts[1] && verb === "PATCH") return updateStudent(parts[1], data, session);
   if (parts[0] === "students") return { list: readDb().students.map((s) => publicStudent(s, ROLES.TEACHER)) };
 
   if (parts[0] === "knowledge" && parts.length === 1 && verb === "GET") return knowledgeList(data);
@@ -24,8 +31,13 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
 
   if (parts[0] === "party" && parts[1] === "progress") return partyProgress(session.studentId);
   if (parts[0] === "party" && parts[1] === "tasks" && parts[3] === "done" && verb === "POST") return completePartyTask(session.studentId, parts[2]);
+  if (parts[0] === "theory" && parts[1] === "questions" && verb === "GET") return theoryQuestions(session);
+  if (parts[0] === "theory" && parts[1] === "attempt" && verb === "POST") return submitTheoryAttempt(data, session);
+  if (parts[0] === "theory" && parts[1] === "workbench" && parts[2] === "questions" && parts.length === 3 && verb === "GET") return theoryQuestionAdmin(session);
+  if (parts[0] === "theory" && parts[1] === "workbench" && parts[2] === "questions" && parts.length === 3 && verb === "PUT") return saveTheoryQuestions(data, session);
+  if (parts[0] === "theory" && parts[1] === "workbench" && parts[2] === "questions" && parts[3] === "import") return importTheoryQuestions(data, session);
 
-  if (parts[0] === "notices" && parts.length === 1) return { list: readDb().notices.slice().sort((a, b) => b.publishedAt - a.publishedAt) };
+  if (parts[0] === "notices" && parts.length === 1) return { list: readDb().notices.filter((item) => item.publishedAt <= Date.now()).slice().sort((a, b) => b.publishedAt - a.publishedAt) };
   if (parts[0] === "notices" && parts[1]) return readDb().notices.find((n) => n.id === parts[1]);
   if (parts[0] === "messages" && parts[1] === "inbox") return inbox(session.studentId);
   if (parts[0] === "messages" && parts[2] === "read" && verb === "POST") return markRead(session.studentId, parts[1]);
@@ -37,9 +49,12 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
   if (parts[0] === "applications" && parts[2] === "submit" && verb === "POST") return submitExistingApplication(parts[1], data, session);
   if (parts[0] === "applications" && parts[1]) return applicationDetail(parts[1], session);
 
-  if (parts[0] === "honors" && parts.length === 1 && verb === "GET") return honors(data);
+  if (parts[0] === "honors" && parts.length === 1 && verb === "GET") return honors(data, session);
   if (parts[0] === "honors" && parts.length === 1 && verb === "POST") return createHonor(data, session);
   if (parts[0] === "honors" && parts[1] && verb === "PUT") return updateHonor(parts[1], data, session);
+  if (parts[0] === "academic" && parts[1] === "workbench" && parts[2] === "plans" && parts.length === 3 && verb === "GET") return listAcademicPlans(session);
+  if (parts[0] === "academic" && parts[1] === "workbench" && parts[2] === "plans" && parts.length === 3 && verb === "PUT") return saveAcademicPlan(data, session);
+  if (parts[0] === "academic" && parts[1] === "workbench" && parts[2] === "plans" && parts[3] === "import") return importAcademicPlans(data, session);
   if (parts[0] === "academic" && parts[1] === "report") return academicReport(session.studentId);
   if (parts[0] === "academic" && parts[1] === "plan") return academicPlan(session.studentId);
   if (parts[0] === "academic" && parts[1] === "progress" && verb === "PUT") return saveAcademicProgress(data, session);
@@ -47,10 +62,15 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
 
   if (parts[0] === "workbench" && parts[1] === "summary") return workbenchSummary(session);
   if (parts[0] === "workbench" && parts[1] === "knowledge" && parts[2] === "misses") return { list: readDb().missKeywords.sort((a, b) => b.count - a.count) };
+  if (parts[0] === "workbench" && parts[1] === "academic" && parts[2] === "risks") return academicRisks(session);
   if (parts[0] === "workbench" && parts[1] === "notices" && parts[2] === "publish" && verb === "POST") return publishNotice(data, session);
-  if (parts[0] === "workbench" && parts[1] === "batches") return { list: batchesWithReadStats() };
+  if (parts[0] === "workbench" && parts[1] === "notices" && parts[2] === "scheduled" && parts[3] === "dispatch") return dispatchScheduledNotices(session);
+  if (parts[0] === "workbench" && parts[1] === "batches") return { list: batchesWithReadStats(data) };
   if (parts[0] === "workbench" && parts[1] === "sms") return { list: readDb().smsSimulation };
   if (parts[0] === "workbench" && parts[1] === "party" && parts[2] === "advance" && verb === "POST") return advanceParty(data, session);
+  if (parts[0] === "workbench" && parts[1] === "party" && parts[2] === "timeline" && verb === "GET") return partyTimeline(session);
+  if (parts[0] === "workbench" && parts[1] === "party" && parts[2] === "timeline" && verb === "PUT") return updatePartyTimeline(data, session);
+  if (parts[0] === "workbench" && parts[1] === "party" && parts[2] === "reminders" && parts[3] === "refresh") return refreshPartyReminders(session);
   if (parts[0] === "workbench" && parts[1] === "applications" && parts[2]) return decideApplication(parts[2], parts[3], data, session);
 
   if (parts[0] === "leader" && parts[1] === "dashboard") return leaderDashboard(session);
@@ -58,6 +78,20 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
   if (parts[0] === "danger" && parts[1] === "reset-db" && verb === "POST") return resetDb();
 
   throw new Error(`ROUTE_NOT_FOUND:${path}`);
+}
+
+function login(data) {
+  const db = readDb();
+  const student = db.students.find((s) => s.studentId === data.studentId);
+  if (!student) throw new Error("UNKNOWN_IDENTITY");
+  if (data.password && data.password !== "demo123456") throw new Error("INVALID_CREDENTIAL");
+  return {
+    token: `mock-token-${student.studentId}-${Date.now()}`,
+    studentId: student.studentId,
+    role: data.role || ROLES.STUDENT,
+    student: publicStudent(student, data.role || ROLES.STUDENT),
+    expiresInHours: 12,
+  };
 }
 
 function getMe(session) {
@@ -83,6 +117,118 @@ function publicStudent(s, role) {
   return { ...base, phoneMasked: maskPhone(s.phone) };
 }
 
+function studentFieldPolicy(session) {
+  const policy = {
+    teacher: {
+      visible: ["studentId", "name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "extension"],
+      editable: ["name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "extension"],
+      exportable: ["studentId", "name", "grade", "major", "className", "nation", "phoneMasked", "politicalStatus", "tutor"],
+    },
+    coordinator: {
+      visible: ["studentId", "name", "grade", "major", "className", "nation", "politicalStatus", "extension"],
+      editable: ["politicalStatus", "extension"],
+      exportable: [],
+    },
+    leader: { visible: ["studentId", "name", "grade", "major", "className", "nation", "phoneMasked", "politicalStatus", "tutor", "hometown", "extension"], editable: [], exportable: [] },
+  }[session.role];
+  if (!policy) throw new Error("FORBIDDEN");
+  return { role: session.role, ...policy };
+}
+
+function updateStudent(studentId, data, session) {
+  const policy = studentFieldPolicy(session);
+  const rejected = Object.keys(data || {}).filter((field) => !policy.editable.includes(field));
+  if (rejected.length) throw new Error(`FIELD_NOT_EDITABLE:${rejected.join(",")}`);
+  let row;
+  withDb((db) => {
+    row = db.students.find((student) => student.studentId === studentId);
+    if (!row) throw new Error("NOT_FOUND");
+    if (session.role === ROLES.COORDINATOR) {
+      const current = db.students.find((student) => student.studentId === session.studentId);
+      if (!current || current.className !== row.className) throw new Error("FORBIDDEN");
+    }
+    Object.assign(row, data);
+    appendAudit(db, session, "student_update", studentId);
+  });
+  return publicStudent(row, session.role);
+}
+
+async function importStudents(data, session) {
+  requireTeacher(session);
+  const file = typeof FormData !== "undefined" && data instanceof FormData ? data.get("file") : null;
+  const dryRun = data.get("dryRun") !== "false";
+  const overwrite = data.get("overwrite") === "true";
+  const rows = parseStudentCsv(file ? await file.text() : "");
+  const errors = [];
+  const seen = new Set();
+  const validRows = [];
+  const db = readDb();
+  rows.forEach((row) => {
+    const missing = ["studentId", "name", "grade", "major", "className"].filter((key) => !row.data[key]);
+    if (missing.length) {
+      errors.push({ row: row.row, field: missing.join(","), message: "必填字段缺失" });
+      return;
+    }
+    if (seen.has(row.data.studentId)) {
+      errors.push({ row: row.row, field: "studentId", message: "导入文件内学号重复" });
+      return;
+    }
+    seen.add(row.data.studentId);
+    if (db.students.some((item) => item.studentId === row.data.studentId) && !overwrite) {
+      errors.push({ row: row.row, field: "studentId", message: "学号已存在，需勾选覆盖更新" });
+      return;
+    }
+    validRows.push(row.data);
+  });
+  const existing = new Set(db.students.map((item) => item.studentId));
+  const result = {
+    ok: !errors.length,
+    dryRun: true,
+    total: rows.length,
+    created: validRows.filter((item) => !existing.has(item.studentId)).length,
+    updated: validRows.filter((item) => existing.has(item.studentId)).length,
+    errors,
+    preview: validRows.slice(0, 5),
+  };
+  if (dryRun || errors.length) return result;
+  withDb((draft) => {
+    validRows.forEach((item) => {
+      const found = draft.students.find((student) => student.studentId === item.studentId);
+      if (found) Object.assign(found, item);
+      else draft.students.push({ ...item, extension: {} });
+    });
+    appendAudit(draft, session, "students_import", file?.name || "students.csv");
+  });
+  return { ...result, ok: true, dryRun: false, errors: [] };
+}
+
+function parseStudentCsv(text) {
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return [];
+  const headers = lines[0].split(",").map((item) => item.trim());
+  const aliases = {
+    studentId: ["studentId", "student_id", "学号"],
+    name: ["name", "姓名"],
+    grade: ["grade", "年级"],
+    major: ["major", "专业"],
+    className: ["className", "class_name", "班级"],
+    nation: ["nation", "民族"],
+    phone: ["phone", "手机号", "联系方式"],
+    politicalStatus: ["politicalStatus", "political_status", "政治面貌"],
+    tutor: ["tutor", "导师"],
+    hometown: ["hometown", "生源地", "户籍地"],
+  };
+  return lines.slice(1).map((line, index) => {
+    const values = line.split(",").map((item) => item.trim());
+    const raw = Object.fromEntries(headers.map((header, i) => [header, values[i] || ""]));
+    const normalized = {};
+    Object.entries(aliases).forEach(([target, names]) => {
+      normalized[target] = names.map((name) => raw[name]).find(Boolean) || "";
+    });
+    return { row: index + 2, data: normalized };
+  });
+}
+
 function knowledgeList({ q, category }) {
   const db = readDb();
   const categories = ["全部", ...new Set(db.knowledge.map((k) => k.category))];
@@ -104,6 +250,7 @@ function knowledgePayload(data) {
     summary: data.summary || "",
     body: data.body || "",
     sensitiveHint: Boolean(data.sensitiveHint),
+    attachments: data.attachments || [],
     online: data.online !== false,
   };
 }
@@ -186,7 +333,7 @@ function uploadFileMeta(data, session) {
   const business = typeof FormData !== "undefined" && data instanceof FormData ? data.get("business") : "general";
   const meta = {
     id: uid("file"),
-    name: file?.name || "mock-file",
+    name: file?.name || "uploaded-file",
     size: file?.size || 0,
     contentType: file?.type || "application/octet-stream",
     business,
@@ -199,7 +346,7 @@ function uploadFileMeta(data, session) {
 
 function partyProgress(studentId) {
   const db = readDb();
-  return { flowName: "入党流程", stages: FLOW_STAGES, ...db.partyByStudent[studentId] };
+  return { flowName: "入党流程", stages: FLOW_STAGES, timelineRules: getPartyRules(db), ...db.partyByStudent[studentId] };
 }
 
 function completePartyTask(studentId, taskId) {
@@ -209,6 +356,173 @@ function completePartyTask(studentId, taskId) {
     if (task) task.done = true;
   });
   return { ok: true };
+}
+
+function defaultTheoryQuestions() {
+  return [
+    { id: "theory_q1", stem: "入党申请人递交申请书后，通常应接受党组织的谈话和培养教育。", type: "single", options: ["正确", "错误"], answer: "正确", explanation: "入党申请提交后，党组织会安排谈话并开展培养教育。", category: "入党流程", online: true },
+    { id: "theory_q2", stem: "发展对象阶段通常需要完成政审、公示和集中培训等材料或环节。", type: "single", options: ["正确", "错误"], answer: "正确", explanation: "发展对象阶段需按组织要求完成相关审查和培训材料。", category: "发展对象", online: true },
+  ];
+}
+
+function theoryBank(db = readDb()) {
+  db.theory = db.theory || { questions: defaultTheoryQuestions(), attempts: [] };
+  db.theory.questions = db.theory.questions?.length ? db.theory.questions : defaultTheoryQuestions();
+  db.theory.attempts = db.theory.attempts || [];
+  return db.theory;
+}
+
+function publicTheoryQuestion(item) {
+  const { answer, ...rest } = item;
+  return rest;
+}
+
+function theoryQuestions(session) {
+  const bank = theoryBank();
+  const attempts = bank.attempts.filter((item) => item.studentId === session.studentId);
+  return { list: bank.questions.filter((item) => item.online !== false).map(publicTheoryQuestion), latestAttempt: attempts[0] || null };
+}
+
+function submitTheoryAttempt(data, session) {
+  let result;
+  withDb((db) => {
+    const bank = theoryBank(db);
+    const questions = bank.questions.filter((item) => item.online !== false);
+    let correct = 0;
+    const details = questions.map((question) => {
+      const answer = data.answers?.[question.id] || "";
+      const ok = answer === question.answer;
+      if (ok) correct += 1;
+      return { id: question.id, stem: question.stem, answer, correctAnswer: question.answer, correct: ok, explanation: question.explanation };
+    });
+    result = { id: uid("attempt"), studentId: session.studentId, at: Date.now(), total: questions.length, correct, score: questions.length ? Math.round((correct * 1000) / questions.length) / 10 : 0, details };
+    bank.attempts.unshift(result);
+    appendAudit(db, session, "theory_attempt", result.id);
+  });
+  return result;
+}
+
+function theoryQuestionAdmin(session) {
+  if (![ROLES.TEACHER, ROLES.LEADER].includes(session.role)) throw new Error("FORBIDDEN");
+  return { list: theoryBank().questions };
+}
+
+function saveTheoryQuestions(data, session) {
+  requireTeacher(session);
+  const questions = (data.questions || []).map(normalizeTheoryQuestion);
+  withDb((db) => {
+    theoryBank(db).questions = questions;
+    appendAudit(db, session, "theory_questions_save", "theory");
+  });
+  return { ok: true, list: questions };
+}
+
+async function importTheoryQuestions(data, session) {
+  requireTeacher(session);
+  const file = typeof FormData !== "undefined" && data instanceof FormData ? data.get("file") : null;
+  const dryRun = data.get("dryRun") !== "false";
+  const rows = parseTheoryCsv(file ? await file.text() : "");
+  const errors = validateTheoryRows(rows);
+  const questions = errors.length ? [] : rows.map(normalizeTheoryQuestion);
+  if (dryRun || errors.length) return { ok: !errors.length, dryRun: true, total: rows.length, questions, errors };
+  withDb((db) => {
+    theoryBank(db).questions = questions;
+    appendAudit(db, session, "theory_questions_import", file?.name || "theory.csv");
+  });
+  return { ok: true, dryRun: false, total: rows.length, questions, errors: [] };
+}
+
+function normalizeTheoryQuestion(row) {
+  const options = Array.isArray(row.options) ? row.options : String(row.options || "").replace("；", ";").split(";").map((item) => item.trim()).filter(Boolean);
+  return { id: row.id || uid("theory"), stem: row.stem || "", type: row.type || "single", options, answer: row.answer || "", explanation: row.explanation || "", category: row.category || "理论知识", online: row.online !== false };
+}
+
+function parseTheoryCsv(text) {
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return [];
+  const headers = lines[0].split(",").map((item) => item.trim());
+  return lines.slice(1).map((line, index) => {
+    const values = line.split(",").map((item) => item.trim());
+    const raw = Object.fromEntries(headers.map((header, i) => [header, values[i] || ""]));
+    return { row: index + 2, stem: raw["题干"] || raw.stem || "", options: raw["选项"] || raw.options || "", answer: raw["答案"] || raw.answer || "", explanation: raw["解析"] || raw.explanation || "", category: raw["分类"] || raw.category || "理论知识", online: !["false", "0", "否"].includes(raw["上线"] || raw.online || "true") };
+  });
+}
+
+function validateTheoryRows(rows) {
+  const errors = [];
+  rows.forEach((row) => {
+    const options = String(row.options || "").replace("；", ";").split(";").map((item) => item.trim()).filter(Boolean);
+    if (!row.stem || !row.answer) errors.push({ row: row.row, field: "stem,answer", message: "题干和答案必填" });
+    else if (options.length < 2) errors.push({ row: row.row, field: "options", message: "至少需要 2 个选项，使用分号分隔" });
+    else if (!options.includes(row.answer)) errors.push({ row: row.row, field: "answer", message: "答案必须包含在选项中" });
+  });
+  return errors;
+}
+
+function getPartyRules(db = readDb()) {
+  return db.partyTimelineRules || [
+    { stageKey: "applicant", durationDays: 30, remindBeforeDays: 7, material: "入党申请书、谈话记录" },
+    { stageKey: "activist", durationDays: 365, remindBeforeDays: 30, material: "培养考察登记表、思想汇报" },
+    { stageKey: "candidate", durationDays: 90, remindBeforeDays: 14, material: "政审材料、公示记录、培训结业材料" },
+    { stageKey: "probationary", durationDays: 365, remindBeforeDays: 30, material: "预备党员考察表、转正申请" },
+    { stageKey: "member", durationDays: 0, remindBeforeDays: 0, material: "归档材料" },
+  ];
+}
+
+function partyTimeline(session) {
+  if (![ROLES.TEACHER, ROLES.LEADER].includes(session.role)) throw new Error("FORBIDDEN");
+  return { stages: FLOW_STAGES, rules: getPartyRules() };
+}
+
+function updatePartyTimeline(data, session) {
+  requireTeacher(session);
+  let rules;
+  withDb((db) => {
+    rules = getPartyRules(db).map((rule) => {
+      const next = (data.rules || []).find((item) => item.stageKey === rule.stageKey) || {};
+      return {
+        stageKey: rule.stageKey,
+        durationDays: Math.max(0, Number(next.durationDays ?? rule.durationDays) || 0),
+        remindBeforeDays: Math.max(0, Number(next.remindBeforeDays ?? rule.remindBeforeDays) || 0),
+        material: next.material ?? rule.material,
+      };
+    });
+    db.partyTimelineRules = rules;
+    appendAudit(db, session, "party_timeline_update", "party_timeline");
+  });
+  return { ok: true, rules };
+}
+
+function refreshPartyReminders(session) {
+  requireTeacher(session);
+  let changed = 0;
+  let total = 0;
+  withDb((db) => {
+    const rules = getPartyRules(db);
+    Object.values(db.partyByStudent).forEach((progress) => {
+      total += 1;
+      const rule = rules.find((item) => item.stageKey === progress.currentKey);
+      if (!rule || rule.durationDays <= 0) return;
+      const taskId = `timeline_${progress.studentId}_${progress.currentKey}`;
+      const existing = progress.tasks.find((task) => task.id === taskId);
+      const stage = FLOW_STAGES.find((item) => item.key === progress.currentKey);
+      const startAt = Math.max(...progress.history.filter((item) => item.stageKey === progress.currentKey).map((item) => item.at), Date.now());
+      const task = {
+        id: taskId,
+        title: `${stage?.name || progress.currentKey}阶段材料提醒`,
+        body: `标准时间线约 ${rule.durationDays} 天，请准备：${rule.material}`,
+        dueAt: startAt + rule.durationDays * 86400000,
+        remindAt: startAt + Math.max(0, rule.durationDays - rule.remindBeforeDays) * 86400000,
+        done: Boolean(existing?.done),
+        source: "timeline",
+      };
+      if (existing) Object.assign(existing, task);
+      else progress.tasks.unshift(task);
+      changed += 1;
+    });
+    appendAudit(db, session, "party_reminders_refresh", "party_progress");
+  });
+  return { ok: true, students: total, changed };
 }
 
 function inbox(studentId) {
@@ -224,16 +538,22 @@ function markRead(studentId, id) {
   return { ok: true };
 }
 
-function batchesWithReadStats() {
+function batchesWithReadStats(query = {}) {
   const db = readDb();
   const messages = Object.values(db.inboxByStudent || {}).flat();
-  return db.batches.map((batch) => {
+  let list = db.batches.map((batch) => {
     const read = messages.filter((item) => item.batchId === batch.id && item.readAt).length;
     return {
       ...batch,
       channels: (batch.channels || []).map((channel) => (channel.name === "站内" ? { ...channel, read } : channel)),
     };
   });
+  if (query.title) list = list.filter((item) => item.title.includes(query.title));
+  if (query.batchId) list = list.filter((item) => item.id.includes(query.batchId));
+  if (query.status) list = list.filter((item) => item.status === query.status);
+  if (query.fromMs) list = list.filter((item) => item.createdAt >= Number(query.fromMs));
+  if (query.toMs) list = list.filter((item) => item.createdAt <= Number(query.toMs));
+  return list;
 }
 
 function applicationsList(data, session) {
@@ -347,12 +667,12 @@ function applicationDetail(id, session) {
   return app;
 }
 
-function honors(data) {
+function honors(data, session) {
   let list = readDb().honors.slice();
   if (data.year) list = list.filter((h) => String(h.year) === String(data.year));
   if (data.category) list = list.filter((h) => h.category === data.category);
   if (data.major) list = list.filter((h) => h.major.includes(data.major));
-  return { list };
+  return { list: list.map((item) => filterHonorAttachments(item, session.role)) };
 }
 
 function honorPayload(data) {
@@ -364,7 +684,14 @@ function honorPayload(data) {
     grade: data.grade || "",
     category: data.category || "",
     intro: data.intro || "",
+    visibility: data.visibility || "public",
+    attachments: (data.attachments || []).map((item) => ({ ...item, visibility: item.visibility || data.visibility || "public" })),
   };
+}
+
+function filterHonorAttachments(item, role) {
+  if ([ROLES.TEACHER, ROLES.LEADER].includes(role)) return item;
+  return { ...item, attachments: (item.attachments || []).filter((file) => file.visibility !== "restricted") };
 }
 
 function createHonor(data, session) {
@@ -397,6 +724,92 @@ function academicPlan(studentId) {
   return { plan: db.academic.plansByKey[key], progress: db.academic.progressByStudent[studentId] };
 }
 
+function listAcademicPlans(session) {
+  if (![ROLES.TEACHER, ROLES.LEADER].includes(session.role)) throw new Error("FORBIDDEN");
+  return { list: Object.entries(readDb().academic.plansByKey).map(([key, plan]) => ({ key, ...plan })) };
+}
+
+function saveAcademicPlan(data, session) {
+  requireTeacher(session);
+  const key = `${data.grade}|${data.major}`;
+  const plan = {
+    key,
+    grade: data.grade,
+    major: data.major,
+    modules: (data.modules || []).map((item) => ({ key: item.key, name: item.name, required: Number(item.required || 0) })),
+  };
+  withDb((db) => {
+    db.academic.plansByKey[key] = plan;
+    appendAudit(db, session, "academic_plan_save", key);
+  });
+  return plan;
+}
+
+async function importAcademicPlans(data, session) {
+  requireTeacher(session);
+  const file = typeof FormData !== "undefined" && data instanceof FormData ? data.get("file") : null;
+  const dryRun = data.get("dryRun") !== "false";
+  const rows = parseAcademicPlanCsv(file ? await file.text() : "");
+  const errors = validateAcademicPlanRows(rows);
+  const plans = errors.length ? [] : groupAcademicPlanRows(rows);
+  if (dryRun || errors.length) return { ok: !errors.length, dryRun: true, total: rows.length, plans, errors };
+  withDb((db) => {
+    plans.forEach((plan) => {
+      db.academic.plansByKey[`${plan.grade}|${plan.major}`] = { key: `${plan.grade}|${plan.major}`, ...plan };
+    });
+    appendAudit(db, session, "academic_plan_import", file?.name || "academic_plans.csv");
+  });
+  return { ok: true, dryRun: false, total: rows.length, plans, errors: [] };
+}
+
+function parseAcademicPlanCsv(text) {
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return [];
+  const headers = lines[0].split(",").map((item) => item.trim());
+  return lines.slice(1).map((line, index) => {
+    const values = line.split(",").map((item) => item.trim());
+    const raw = Object.fromEntries(headers.map((header, i) => [header, values[i] || ""]));
+    return {
+      row: index + 2,
+      grade: raw["年级"] || raw.grade || "",
+      major: raw["专业"] || raw.major || "",
+      key: raw["模块key"] || raw.key || "",
+      name: raw["模块名称"] || raw.name || "",
+      required: raw["要求学分"] || raw.required || "",
+    };
+  });
+}
+
+function validateAcademicPlanRows(rows) {
+  const errors = [];
+  const seen = new Set();
+  rows.forEach((row) => {
+    const missing = ["grade", "major", "key", "name", "required"].filter((field) => !row[field]);
+    if (missing.length) {
+      errors.push({ row: row.row, field: missing.join(","), message: "必填字段缺失" });
+      return;
+    }
+    if (Number.isNaN(Number(row.required))) {
+      errors.push({ row: row.row, field: "required", message: "要求学分必须是数字" });
+      return;
+    }
+    const dedup = `${row.grade}|${row.major}|${row.key}`;
+    if (seen.has(dedup)) errors.push({ row: row.row, field: "key", message: "同一培养方案内模块 key 重复" });
+    seen.add(dedup);
+  });
+  return errors;
+}
+
+function groupAcademicPlanRows(rows) {
+  const grouped = {};
+  rows.forEach((row) => {
+    const id = `${row.grade}|${row.major}`;
+    grouped[id] = grouped[id] || { grade: row.grade, major: row.major, modules: [] };
+    grouped[id].modules.push({ key: row.key, name: row.name, required: Number(row.required) });
+  });
+  return Object.values(grouped);
+}
+
 function academicReport(studentId) {
   const { plan, progress } = academicPlan(studentId);
   if (!plan || !progress) return { ok: false, message: "缺少培养方案或学业进度。" };
@@ -413,6 +826,29 @@ function academicReport(studentId) {
     suggestions: modules.filter((m) => m.gap > 0).map((m) => ({ focus: m.name, hint: `仍需约 ${m.gap} 学分，请关注 ${m.name} 相关课程。` })),
     uploads: progress.uploads || [],
   };
+}
+
+function academicRisks(session) {
+  if (![ROLES.TEACHER, ROLES.LEADER].includes(session.role)) throw new Error("FORBIDDEN");
+  const rows = readDb().students.map((student) => {
+    const report = academicReport(student.studentId);
+    if (!report.ok) {
+      return { ...student, riskLevel: "数据缺失", totalGap: 0, gaps: [] };
+    }
+    const gaps = report.modules.filter((item) => item.gap > 0);
+    return {
+      studentId: student.studentId,
+      name: student.name,
+      grade: student.grade,
+      major: student.major,
+      className: student.className,
+      riskLevel: report.riskLevel,
+      totalGap: gaps.reduce((sum, item) => sum + item.gap, 0),
+      gaps,
+    };
+  });
+  const order = { 高: 0, 中: 1, 低: 2, 数据缺失: 3 };
+  return { list: rows.sort((a, b) => (order[a.riskLevel] ?? 9) - (order[b.riskLevel] ?? 9) || b.totalGap - a.totalGap) };
 }
 
 function saveAcademicProgress(data, session) {
@@ -447,7 +883,10 @@ function workbenchSummary(session) {
 
 function publishNotice(data, session) {
   if (![ROLES.TEACHER, ROLES.COORDINATOR].includes(session.role)) throw new Error("FORBIDDEN");
-  const notice = { id: uid("n"), title: data.title, tags: data.tags || [], summary: data.summary || data.title, content: data.content || data.summary, source: "Web 工作台", publishedAt: Date.now() };
+  const now = Date.now();
+  const scheduledAt = Number(data.scheduledAt || 0);
+  const scheduled = scheduledAt > now;
+  const notice = { id: uid("n"), title: data.title, tags: data.tags || [], summary: data.summary || data.title, content: data.content || data.summary, source: "Web 工作台", publishedAt: scheduled ? scheduledAt : now };
   const batchId = uid("batch");
   let reach = 0;
   withDb((db) => {
@@ -458,21 +897,58 @@ function publishNotice(data, session) {
       id: batchId,
       title: notice.title,
       targetRule: data.targetRule || { kind: "all" },
-      createdAt: Date.now(),
-      channels: [
-        { name: "站内", sendOk: reach, sendFail: 0, deliverOk: reach, deliverFail: 0, read: 0, observability: "可读" },
-        { name: "邮件", sendOk: reach, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, observability: "不可观测" },
-        { name: "短信(模拟)", sendOk: reach, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, observability: "模拟" },
-      ],
+      noticeId: notice.id,
+      status: scheduled ? "scheduled" : "sent",
+      scheduledAt: scheduled ? scheduledAt : now,
+      createdAt: now,
+      channels: scheduled ? scheduledChannels(reach) : sentChannels(reach),
     });
-    targets.forEach((s) => {
-      db.inboxByStudent[s.studentId] = db.inboxByStudent[s.studentId] || [];
-      db.inboxByStudent[s.studentId].unshift({ id: uid("msg"), noticeId: notice.id, title: notice.title, summary: notice.summary, batchId, createdAt: Date.now(), readAt: null, channels: [{ name: "站内", state: "发送请求成功", detail: "送达成功" }, { name: "邮件", state: "发送请求成功", detail: "不可观测" }] });
-    });
-    db.smsSimulation.unshift({ id: uid("sms"), batchId, at: Date.now(), audience: targets.map((s) => s.studentId), text: `[模拟短信] ${notice.title}` });
-    appendAudit(db, session, "notice_publish", batchId);
+    if (!scheduled) deliverMockNotice(db, notice, batchId, targets);
+    appendAudit(db, session, scheduled ? "notice_schedule" : "notice_publish", batchId);
   });
-  return { notice, batchId, reach };
+  return { notice, batchId, reach, scheduled };
+}
+
+function dispatchScheduledNotices(session) {
+  requireTeacher(session);
+  let dispatched = 0;
+  withDb((db) => {
+    db.batches.filter((batch) => batch.status === "scheduled" && batch.scheduledAt <= Date.now()).forEach((batch) => {
+      const notice = db.notices.find((item) => item.id === batch.noticeId);
+      if (!notice) return;
+      const targets = db.students.filter((s) => matchRule(batch.targetRule, s, session));
+      deliverMockNotice(db, notice, batch.id, targets);
+      batch.status = "sent";
+      batch.channels = sentChannels(targets.length);
+      dispatched += 1;
+    });
+    appendAudit(db, session, "notice_scheduled_dispatch", "notice_batches");
+  });
+  return { ok: true, dispatched };
+}
+
+function sentChannels(count) {
+  return [
+    { name: "站内", sendOk: count, sendFail: 0, deliverOk: count, deliverFail: 0, read: 0, observability: "可读" },
+    { name: "邮件", sendOk: count, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, observability: "不可观测" },
+    { name: "短信", sendOk: count, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, observability: "发送记录" },
+  ];
+}
+
+function scheduledChannels(count) {
+  return [
+    { name: "站内", sendOk: 0, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, target: count, observability: "待发送" },
+    { name: "邮件", sendOk: 0, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, target: count, observability: "待发送" },
+    { name: "短信", sendOk: 0, sendFail: 0, deliverOk: 0, deliverFail: 0, read: 0, target: count, observability: "待发送" },
+  ];
+}
+
+function deliverMockNotice(db, notice, batchId, targets) {
+  targets.forEach((s) => {
+    db.inboxByStudent[s.studentId] = db.inboxByStudent[s.studentId] || [];
+    db.inboxByStudent[s.studentId].unshift({ id: uid("msg"), noticeId: notice.id, title: notice.title, summary: notice.summary, batchId, createdAt: Date.now(), readAt: null, channels: [{ name: "站内", state: "发送请求成功", detail: "送达成功" }, { name: "邮件", state: "发送请求成功", detail: "不可观测" }] });
+  });
+  db.smsSimulation.unshift({ id: uid("sms"), batchId, at: Date.now(), audience: targets.map((s) => s.studentId), text: `[短信通知] ${notice.title}` });
 }
 
 function matchRule(rule, student, session) {

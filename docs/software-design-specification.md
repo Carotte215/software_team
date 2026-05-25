@@ -1,12 +1,12 @@
 # 学院学生综合服务与党团管理平台软件设计规格说明书
 
-文档编号：学院学生综合服务与党团管理平台 – SDS – 2.0
+文档编号：学院学生综合服务与党团管理平台 – SDS – 3.2
 
 课程名称：软件工程导论  
 项目名称：学院学生综合服务与党团管理平台  
 成员信息：李煜南、许珀铭、朱启哲、赵子涵  
 提交日期：2026-05-15  
-文档版本：V2.0
+文档版本：V3.2
 
 ## 文档变更历史记录
 
@@ -23,6 +23,18 @@
 | 9 | 2026-05-15 | 项目组 | 完成第 7 轮迭代：党团流程管理，补充管理端学生阶段推进入口 | V1.8 |
 | 10 | 2026-05-15 | 项目组 | 完成第 8 轮迭代：学生画像与导出，补充脱敏 CSV 导出和前端导出入口 | V1.9 |
 | 11 | 2026-05-15 | 项目组 | 完成第 9 轮迭代：荣誉展示管理，补充荣誉条目新增、编辑和管理端维护入口 | V2.0 |
+| 12 | 2026-05-16 | 项目组 | 完成第 10 轮迭代：学业预警增强，补充老师/领导端风险学生列表和缺口模块展示 | V2.1 |
+| 13 | 2026-05-16 | 项目组 | 完成第 11 轮迭代：真实认证与部署准备，补充运行时/会话接口、环境变量样例、启动脚本和前端 API 模式切换 | V2.2 |
+| 14 | 2026-05-16 | 项目组 | 完成第 12 轮迭代：真实认证闭环，补充登录签发 Token、Bearer 会话解析和 Remote 模式登录表单 | V2.3 |
+| 15 | 2026-05-16 | 项目组 | 完成第 13 轮迭代：学生数据批量导入，补充 CSV/XLSX 导入预检、覆盖更新和行号级错误提示 | V2.4 |
+| 16 | 2026-05-16 | 项目组 | 完成第 14 轮迭代：证明模板生成，补充申请单 Word 兼容文档生成与学生端下载入口 | V2.5 |
+| 17 | 2026-05-16 | 项目组 | 完成第 15 轮迭代：党团标准时间线与提醒，补充阶段规则配置、提醒任务刷新和学生端规则展示 | V2.6 |
+| 18 | 2026-05-16 | 项目组 | 完成第 16 轮迭代：字段级权限与画像维护，补充字段白名单、画像更新接口和工作台维护入口 | V2.7 |
+| 19 | 2026-05-17 | 项目组 | 完成第 17 轮迭代：通知推送增强，补充定时通知、到期派发、批次状态和批次筛选能力 | V2.8 |
+| 20 | 2026-05-17 | 项目组 | 完成第 18 轮迭代：知识库文件化管理，补充知识条目附件绑定、上传和学生端附件下载入口 | V2.9 |
+| 21 | 2026-05-17 | 项目组 | 完成第 19 轮迭代：荣誉展示完善，补充荣誉证明材料绑定、公开/受限可见范围和学生端下载入口 | V3.0 |
+| 22 | 2026-05-17 | 项目组 | 完成第 20 轮迭代：学业预警二期，补充培养方案后台维护、CSV 导入预检和方案列表管理 | V3.1 |
+| 23 | 2026-05-17 | 项目组 | 完成第 21 轮迭代：理论自测与扩展模块，补充党建理论题库维护、学生练习作答和自动判分 | V3.2 |
 
 ## 迭代记录
 
@@ -145,6 +157,150 @@
 | 主要变更 | 后端新增荣誉条目创建和更新接口，仅管理老师可操作；mock 网关同步支持新增和编辑荣誉；前端工作台新增荣誉展示维护表单和荣誉条目列表，管理老师可新增、编辑荣誉名称、获奖人、年份、类别、专业、年级和简介。 |
 | 验证方式 | 已执行 `python3 -m compileall backend/app`、FastAPI TestClient 荣誉创建/更新/学生拒绝访问接口冒烟、`npm run build` 前端构建验证。 |
 | 遗留问题 | 荣誉附件上传和可见范围控制尚未接入；删除/下线能力暂未实现，后续可加入审计确认流程。 |
+
+### IR-010 学业预警增强
+
+| 字段 | 内容 |
+| --- | --- |
+| 迭代编号 | IR-010 学业预警增强 |
+| 迭代日期 | 2026-05-16 |
+| 迭代目标 | 在学生端培养方案自查基础上，补充老师/领导端学业风险学生列表，使学业预警从个人查看扩展到管理端风险识别。 |
+| 实现范围 | `backend/app/routers/workbench.py`、`web/src/api/mockGateway.js`、`web/src/services/api.js`、`web/src/views/WorkbenchView.vue`。 |
+| 主要变更 | 后端新增 `/workbench/academic/risks` 接口，仅管理老师和学院领导可访问；接口按培养方案与学生已获学分计算风险等级、总缺口和缺口模块，并按高风险优先排序；mock 网关同步实现风险列表；前端工作台新增“学业风险学生”列表，展示风险等级、总缺口和主要缺口模块。 |
+| 验证方式 | 已执行 `python3 -m compileall backend/app`、FastAPI TestClient 教师/领导访问与学生拒绝访问接口冒烟、`npm run build` 前端构建验证。 |
+| 遗留问题 | 成绩单 PDF 解析和人工校验入口尚未实现；培养方案维护仍依赖种子数据/后台数据，后续需要管理端维护页面。 |
+
+### IR-011 真实认证与部署准备
+
+| 字段 | 内容 |
+| --- | --- |
+| 迭代编号 | IR-011 真实认证与部署准备 |
+| 迭代日期 | 2026-05-16 |
+| 迭代目标 | 将课程演示系统进一步整理为可部署原型，明确环境变量、启动方式、运行时信息和当前 header 模拟认证边界。 |
+| 实现范围 | `backend/app/core/config.py`、`backend/app/routers/health.py`、`backend/.env.example`、`backend/README.md`、`scripts/dev-backend.sh`、`scripts/dev-web.sh`、`scripts/smoke-backend.sh`、`web/src/api/client.js`、`web/src/services/api.js`、`web/src/App.vue`、`web/README.md`。 |
+| 主要变更 | 后端新增 `/api/runtime` 运行时配置摘要接口和 `/api/session` 当前会话接口；环境变量样例补充 `AUTH_MODE`、`UPLOAD_DIR`、`MAX_UPLOAD_BYTES`；新增后端启动、前端启动和后端冒烟脚本；前端 API Client 支持读取/持久化 API 模式配置；页面右上角展示当前 `mock/remote` 模式并提供快速切换按钮。 |
+| 验证方式 | 已执行 `python3 -m compileall backend/app`、`./scripts/smoke-backend.sh`、FastAPI TestClient runtime/session 冒烟、`npm run build` 前端构建验证。 |
+| 遗留问题 | 当前认证仍为 header 模拟模式，后续接入微信或统一认证时需替换 `get_current_session()`；部署脚本仍为开发/课程演示脚本，生产环境还需 systemd、Nginx 或容器编排配置。 |
+
+### IR-012 真实认证闭环
+
+| 字段 | 内容 |
+| --- | --- |
+| 迭代编号 | IR-012 真实认证闭环 |
+| 迭代日期 | 2026-05-16 |
+| 迭代目标 | 将系统从单纯 Header 模拟登录推进到可登录、可签发 Token、业务接口可解析 Bearer Token 的轻量认证闭环，为后续对接微信或统一身份认证预留替换点。 |
+| 实现范围 | `backend/app/routers/auth.py`、`backend/app/services/auth_tokens.py`、`backend/app/deps.py`、`backend/app/core/config.py`、`backend/app/main.py`、`backend/.env.example`、`scripts/smoke-backend.sh`、`web/src/App.vue`、`web/src/services/api.js`、`web/src/api/mockGateway.js`、`backend/README.md`、`web/README.md`。 |
+| 主要变更 | 后端新增 `/api/auth/login` 登录接口，基于学生身份、角色和开发口令签发 HMAC Token；认证依赖优先解析 `Authorization: Bearer <token>`，并支持 `AUTH_MODE=token` 时拒绝无效或缺失 Token；运行时接口补充 Token 有效期；前端 Remote 模式新增登录表单，登录成功后保存 Token 并由统一请求层自动携带；Mock 模式保留角色/学生快捷切换用于课堂演示。 |
+| 验证方式 | 已执行 `python3 -m compileall backend/app`、`./scripts/smoke-backend.sh`、`AUTH_MODE=token` 下 FastAPI TestClient 登录/Token 会话冒烟、`npm run build` 前端构建验证。 |
+| 遗留问题 | 当前仍为课程演示口令认证，不具备正式统一身份认证能力；角色授权仍由登录请求传入，后续应接入真实账号角色映射表或学校统一认证回调。 |
+
+### IR-013 学生数据批量导入
+
+| 字段 | 内容 |
+| --- | --- |
+| 迭代编号 | IR-013 学生数据批量导入 |
+| 迭代日期 | 2026-05-16 |
+| 迭代目标 | 补齐需求文档中学生基础信息初始化导入能力，使管理老师可以通过文件批量维护学生画像基础字段，并在导入前获得可理解的错误反馈。 |
+| 实现范围 | `backend/app/routers/students.py`、`backend/requirements.txt`、`web/src/services/api.js`、`web/src/api/mockGateway.js`、`web/src/views/WorkbenchView.vue`。 |
+| 主要变更 | 后端新增 `/api/students/import` 接口，仅管理老师可访问；接口支持 `dryRun` 预检和 `overwrite` 覆盖更新参数，解析 CSV 并预留 XLSX 解析能力；导入校验包含必填字段、文件内学号重复、已有学号未授权覆盖等行号级错误；确认导入时新增或更新学生基础画像并记录审计日志；前端工作台在学生画像区域新增文件选择、覆盖选项、预检导入、确认导入和错误/预览结果展示；mock 网关同步支持同一导入契约。 |
+| 验证方式 | 已执行 `python3 -m compileall backend/app`、FastAPI TestClient 学生导入预检/重复错误/学生拒绝访问接口冒烟、`./scripts/smoke-backend.sh`、`npm run build` 前端构建验证。 |
+| 遗留问题 | XLSX 解析依赖 `openpyxl`，部署环境需按 `requirements.txt` 安装；字段级导入白名单和高风险覆盖二次确认仍需在后续权限迭代中细化。 |
+
+### IR-014 证明模板生成
+
+| 字段 | 内容 |
+| --- | --- |
+| 迭代编号 | IR-014 证明模板生成 |
+| 迭代日期 | 2026-05-16 |
+| 迭代目标 | 将证明/请假/盖章申请从“只记录表单与审批状态”推进到可基于学生基础信息和申请内容生成可下载文档，支撑首版电子证明闭环演示。 |
+| 实现范围 | `backend/app/routers/applications.py`、`web/src/services/api.js`、`web/src/views/ApplyView.vue`。 |
+| 主要变更 | 后端新增 `/api/applications/{id}/document` 文档生成接口，按申请单、学生基础画像、审批状态和审批意见渲染学院学生事务申请/证明单；接口支持学生本人、管理老师和学院领导在权限范围内访问，并记录文档生成审计日志；默认返回 Word 兼容 `.doc` 文件，另支持 `format=html` 预览；学生端申请列表和详情页新增“生成文档”下载入口。 |
+| 验证方式 | 已执行 `python3 -m compileall backend/app`、FastAPI TestClient 申请文档生成/越权拒绝接口冒烟、`./scripts/smoke-backend.sh`、`npm run build` 前端构建验证。 |
+| 遗留问题 | 当前生成的是 Word 兼容 HTML 文档，尚未接入正式 PDF 渲染、电子签章或学院公章授权；模板内容仍为内置基础版，后续需接入可维护模板和字段映射配置。 |
+
+### IR-015 党团标准时间线与提醒
+
+| 字段 | 内容 |
+| --- | --- |
+| 迭代编号 | IR-015 党团标准时间线与提醒 |
+| 迭代日期 | 2026-05-16 |
+| 迭代目标 | 补齐需求文档中党团流程“标准时间线配置”和“按时间规则自动提醒”的 P0 能力，使管理老师可维护阶段周期和材料要求，并为学生生成阶段待办提醒。 |
+| 实现范围 | `backend/app/routers/party.py`、`web/src/services/api.js`、`web/src/api/mockGateway.js`、`web/src/views/WorkbenchView.vue`、`web/src/views/PartyView.vue`。 |
+| 主要变更 | 后端新增 `/api/workbench/party/timeline` 查询/保存接口和 `/api/workbench/party/reminders/refresh` 提醒刷新接口；标准时间线包含阶段持续天数、提前提醒天数和材料要求，并以轻量 JSON 配置保存；阶段推进时自动生成当前阶段提醒任务；管理工作台新增时间线规则表格、保存规则和刷新提醒入口；学生端党团页展示当前阶段标准周期、提前提醒和材料要求；mock 网关同步支持时间线配置和提醒生成。 |
+| 验证方式 | 已执行 `python3 -m compileall backend/app`、FastAPI TestClient 时间线查询/保存/刷新提醒/学生拒绝访问接口冒烟、`npm run build` 前端构建验证。 |
+| 遗留问题 | 当前提醒只生成站内待办数据，尚未接入微信订阅消息或邮件推送；时间线配置采用课程演示用 JSON 文件保存，后续正式部署可迁移为数据库配置表并增加版本审计。 |
+
+### IR-016 字段级权限与画像维护
+
+| 字段 | 内容 |
+| --- | --- |
+| 迭代编号 | IR-016 字段级权限与画像维护 |
+| 迭代日期 | 2026-05-16 |
+| 迭代目标 | 将学生画像从只读展示和批量导入推进到可按角色字段白名单维护，落实需求文档中“字段级可见/可编辑/可导出”的首版基线。 |
+| 实现范围 | `backend/app/routers/students.py`、`web/src/services/api.js`、`web/src/api/mockGateway.js`、`web/src/views/WorkbenchView.vue`。 |
+| 主要变更 | 后端新增 `/api/students/field-policy` 字段策略接口，返回当前角色可见、可编辑和可导出字段；新增 `/api/students/{id}` 画像更新接口，管理老师可维护基础画像字段，协同管理者仅可在本人班级范围内维护授权字段；越权字段会返回明确错误；画像更新写入审计日志；前端工作台新增学生画像维护面板，按字段白名单启用或禁用表单控件；mock 网关同步字段策略和更新行为。 |
+| 验证方式 | 已执行 `python3 -m compileall backend/app`、FastAPI TestClient 字段策略/教师更新/协同范围拒绝/学生拒绝访问接口冒烟、`./scripts/smoke-backend.sh`、`npm run build` 前端构建验证。 |
+| 遗留问题 | 字段策略当前仍为代码内置常量，尚未提供后台动态配置；敏感字段明文导出审批和字段级操作日志详情还可继续增强。 |
+
+### IR-017 通知推送增强
+
+| 字段 | 内容 |
+| --- | --- |
+| 迭代编号 | IR-017 通知推送增强 |
+| 迭代日期 | 2026-05-17 |
+| 迭代目标 | 在已有站内通知和批次统计基础上补齐定时发送、到期派发和批次筛选能力，使通知模块更贴近需求文档中“定向推送、统计可查、按批次追踪”的验收口径。 |
+| 实现范围 | `backend/app/schemas.py`、`backend/app/services/serializers.py`、`backend/app/routers/notices.py`、`web/src/services/api.js`、`web/src/api/mockGateway.js`、`web/src/views/WorkbenchView.vue`、`web/styles.css`。 |
+| 主要变更 | 通知发布参数新增 `scheduledAt`；后端发布接口支持生成待发送批次，到期前不进入学生公开通知列表，也不写入学生站内信；新增 `/api/workbench/notices/scheduled/dispatch` 接口用于派发到期待发送批次；批次序列化补充 `status`、`scheduledAt` 和 `noticeId`；批次列表支持按标题、批次号、状态和时间区间筛选；前端工作台新增定时发送输入、批次筛选控件和“派发到期”按钮；mock 网关同步定时批次、派发和筛选行为。 |
+| 验证方式 | 已执行 `python3 -m compileall backend/app`、FastAPI TestClient 定时发布/筛选/派发权限接口冒烟、`./scripts/smoke-backend.sh`、`npm run build` 前端构建验证。 |
+| 遗留问题 | 邮件与微信订阅消息仍未接真实外部通道，当前保持站内信真实记录、邮件不可观测、短信模拟记录的课程实现口径；定时派发仍需由管理端按钮触发，正式部署可接入后台调度任务。 |
+
+### IR-018 知识库文件化管理
+
+| 字段 | 内容 |
+| --- | --- |
+| 迭代编号 | IR-018 知识库文件化管理 |
+| 迭代日期 | 2026-05-17 |
+| 迭代目标 | 将知识库条目从纯文本标准答案扩展为可绑定政策文件、材料模板和办事依据附件，支撑需求文档中“政策文件、标准问答、办事链接和附件”的 P0 要求。 |
+| 实现范围 | `backend/app/schemas.py`、`backend/app/routers/knowledge.py`、`web/src/api/mockGateway.js`、`web/src/views/WorkbenchView.vue`、`web/src/views/KnowledgeView.vue`。 |
+| 主要变更 | 知识条目创建和更新请求新增 `attachments` 字段；后端知识库创建/编辑接口保存附件元数据并通过既有序列化接口返回；管理工作台知识库维护表单新增多附件上传，保存前复用统一文件上传接口写入附件元数据；知识条目列表显示附件数量；学生端政策检索结果展示附件下载按钮，并复用统一文件下载接口；mock 网关同步附件字段保存行为。 |
+| 验证方式 | 已执行 `python3 -m compileall backend/app`、FastAPI TestClient 知识条目附件创建/更新接口冒烟、`./scripts/smoke-backend.sh`、`npm run build` 前端构建验证。 |
+| 遗留问题 | 附件权限当前仍复用登录态与文件下载接口，尚未按知识条目可见范围做更细粒度校验；模板文件真实版本管理与知识条目附件版本审计仍可继续增强。 |
+
+### IR-019 荣誉展示完善
+
+| 字段 | 内容 |
+| --- | --- |
+| 迭代编号 | IR-019 荣誉展示完善 |
+| 迭代日期 | 2026-05-17 |
+| 迭代目标 | 完善奖励荣誉模块的证明材料管理和隐私可见范围控制，使荣誉展示既能公开榜样信息，也能对证明材料进行受限访问。 |
+| 实现范围 | `.gitignore`、`backend/app/schemas.py`、`backend/app/routers/honors.py`、`web/src/api/mockGateway.js`、`web/src/views/WorkbenchView.vue`、`web/src/views/HonorsView.vue`。 |
+| 主要变更 | 荣誉创建和更新请求新增 `attachments` 与 `visibility` 字段；后端通过轻量侧边 JSON 元数据保存荣誉附件和可见范围，避免引入数据库迁移；荣誉列表按当前角色过滤附件，学生仅可见公开材料，管理老师和学院领导可见全部材料；管理工作台荣誉维护表单新增证明材料上传与“公开/限管理端”选项；学生端荣誉展示新增证明材料下载入口；mock 网关同步荣誉附件与可见范围逻辑；忽略本地荣誉元数据 JSON 文件。 |
+| 验证方式 | 已执行 `python3 -m compileall backend/app`、FastAPI TestClient 荣誉受限附件创建/学生过滤/教师可见接口冒烟、`./scripts/smoke-backend.sh`、`npm run build` 前端构建验证。 |
+| 遗留问题 | 荣誉附件元数据当前存放在课程演示 JSON 文件中，正式部署建议迁移到数据库表；附件下载接口仍未按荣誉材料授权做单文件级拦截，后续可在文件服务中加入业务来源校验。 |
+
+### IR-020 学业预警二期
+
+| 字段 | 内容 |
+| --- | --- |
+| 迭代编号 | IR-020 学业预警二期 |
+| 迭代日期 | 2026-05-17 |
+| 迭代目标 | 在学生端学业自查和管理端风险列表基础上，补齐培养方案后台维护能力，使学业预警不再完全依赖种子数据，为后续成绩单解析和人工校验提供可维护规则基础。 |
+| 实现范围 | `backend/app/schemas.py`、`backend/app/routers/academic.py`、`web/src/services/api.js`、`web/src/api/mockGateway.js`、`web/src/views/WorkbenchView.vue`。 |
+| 主要变更 | 新增培养方案保存请求模型；后端新增 `/api/academic/workbench/plans` 查询/保存接口，仅管理老师可保存，学院领导可查看；新增 `/api/academic/workbench/plans/import` CSV 导入接口，支持 `dryRun` 预检、行号级错误提示和按年级/专业聚合模块；管理工作台新增培养方案维护区域，可查看方案列表、编辑模块 JSON、预检导入和确认导入；mock 网关同步培养方案维护和导入契约。 |
+| 验证方式 | 已执行 `python3 -m compileall backend/app`、FastAPI TestClient 培养方案列表/保存/导入预检/学生拒绝访问接口冒烟、`./scripts/smoke-backend.sh`、`npm run build` 前端构建验证。 |
+| 遗留问题 | 成绩单 PDF 自动解析仍未实现，当前仍以学生自报/管理端维护的学分进度比对培养方案；培养方案模块编辑目前使用 JSON 文本框，后续可拆成行级表格编辑和版本管理。 |
+
+### IR-021 理论自测与扩展模块
+
+| 字段 | 内容 |
+| --- | --- |
+| 迭代编号 | IR-021 理论自测与扩展模块 |
+| 迭代日期 | 2026-05-17 |
+| 迭代目标 | 补齐需求文档中的党建理论自测 P2 能力，使学生可在党团模块进行理论练习并自动判分，管理老师可维护题库并支持 CSV 导入。 |
+| 实现范围 | `backend/app/routers/theory.py`、`backend/app/main.py`、`web/src/services/api.js`、`web/src/api/mockGateway.js`、`web/src/views/PartyView.vue`、`web/src/views/WorkbenchView.vue`。 |
+| 主要变更 | 新增独立理论自测后端路由，提供学生题目列表、答题提交、管理端题库查询/保存和 CSV 导入接口；题库与答题记录采用课程演示 JSON 文件保存，默认内置入党流程相关示例题；学生端党团页新增理论自测区域，支持单选作答、提交判分、查看正确答案和解析；管理工作台新增理论题库维护区域，支持新增/编辑题目、上线/下线、CSV 预检导入和确认导入；mock 网关同步理论自测接口契约。 |
+| 验证方式 | 已执行 `python3 -m compileall backend/app`、FastAPI TestClient 学生题目/答题判分/教师题库保存/学生拒绝管理/题库导入预检接口冒烟、`./scripts/smoke-backend.sh`、`npm run build` 前端构建验证。 |
+| 遗留问题 | 当前仅支持单选题，题库与答题记录为课程演示 JSON 文件；后续可扩展多选/判断/错题本、成绩统计看板，并迁移至数据库表。 |
 
 ## 目录
 

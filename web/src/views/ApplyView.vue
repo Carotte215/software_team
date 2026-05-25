@@ -125,11 +125,17 @@ async function openDetail(item) {
 
 async function downloadAttachment(file) {
   if (!file?.id && !file?.url) {
-    toast("该附件仅为本地元数据，暂无可下载文件");
+    toast("该附件暂无可下载文件，请联系管理员确认材料状态");
     return;
   }
   const blob = await api.downloadFile(file);
   saveBlob(blob, file.name || "attachment");
+}
+
+async function downloadDocument(item) {
+  const blob = await api.downloadApplicationDocument(item.id);
+  saveBlob(blob, `${item.type}-${item.subtype || item.id}.doc`);
+  toast("文档已生成");
 }
 </script>
 
@@ -193,6 +199,7 @@ async function downloadAttachment(file) {
           </p>
           <div class="row wrap">
             <button @click="openDetail(item)">查看详情</button>
+            <button @click="downloadDocument(item)">生成文档</button>
             <button
               v-if="[APPROVAL.DRAFT, APPROVAL.REJECTED].includes(item.status)"
               class="primary"
@@ -214,6 +221,7 @@ async function downloadAttachment(file) {
     </div>
     <p>{{ selected.type }} · {{ selected.subtype }} · {{ selected.id }}</p>
     <p class="muted">说明：{{ selected.form?.reason || "未填写" }}</p>
+    <button @click="downloadDocument(selected)">生成申请/证明文档</button>
     <div v-if="selected.attachments?.length" class="section-title">附件</div>
     <div v-if="selected.attachments?.length" class="stack">
       <div v-for="file in selected.attachments" :key="file.id || file.name" class="card row between">

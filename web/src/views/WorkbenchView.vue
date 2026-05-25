@@ -18,6 +18,36 @@ const selectedApplication = ref(null);
 const knowledgeItems = ref([]);
 const students = ref([]);
 const honors = ref([]);
+const academicRisks = ref([]);
+const academicPlans = ref([]);
+const partyTimeline = ref(null);
+const fieldPolicy = ref(null);
+const studentImportFile = ref(null);
+const studentImportOverwrite = ref(false);
+const studentImportResult = ref(null);
+const academicPlanImportFile = ref(null);
+const academicPlanImportResult = ref(null);
+const theoryQuestions = ref([]);
+const theoryImportFile = ref(null);
+const theoryImportResult = ref(null);
+const academicPlanForm = reactive({
+  grade: "",
+  major: "",
+  modulesText: "[]",
+});
+const studentForm = reactive({
+  studentId: "",
+  name: "",
+  grade: "",
+  major: "",
+  className: "",
+  nation: "",
+  phone: "",
+  politicalStatus: "",
+  tutor: "",
+  hometown: "",
+  extensionText: "{}",
+});
 const noticeForm = reactive({
   title: "",
   summary: "",
@@ -25,6 +55,12 @@ const noticeForm = reactive({
   tags: "通知,党团",
   kind: "all",
   value: "",
+  scheduledAt: "",
+});
+const batchFilter = reactive({
+  title: "",
+  batchId: "",
+  status: "",
 });
 const knowledgeForm = reactive({
   id: "",
@@ -35,6 +71,7 @@ const knowledgeForm = reactive({
   body: "",
   sensitiveHint: false,
   online: true,
+  attachments: [],
 });
 const partyForm = reactive({
   studentId: "",
@@ -50,6 +87,17 @@ const honorForm = reactive({
   grade: "",
   category: "校级",
   intro: "",
+  visibility: "public",
+  attachments: [],
+});
+const theoryForm = reactive({
+  id: "",
+  stem: "",
+  optionsText: "正确;错误",
+  answer: "正确",
+  explanation: "",
+  category: "理论知识",
+  online: true,
 });
 
 onMounted(load);
@@ -58,12 +106,17 @@ async function load() {
   if (session.value.role === ROLES.STUDENT) return;
   summary.value = await api.getWorkbenchSummary();
   applications.value = (await api.listApplications({ scope: "workbench" }).catch(() => ({ list: [] }))).list || [];
-  batches.value = (await api.listWorkbenchBatches().catch(() => ({ list: [] }))).list || [];
+  batches.value = (await api.listWorkbenchBatches(batchQuery()).catch(() => ({ list: [] }))).list || [];
   misses.value = (await api.listKnowledgeMisses().catch(() => ({ list: [] }))).list || [];
   sms.value = (await api.listSmsSimulations().catch(() => ({ list: [] }))).list || [];
   knowledgeItems.value = (await api.listKnowledgeAdmin().catch(() => ({ list: [] }))).list || [];
   students.value = (await api.listStudents().catch(() => ({ list: [] }))).list || [];
+  fieldPolicy.value = await api.getStudentFieldPolicy().catch(() => null);
   honors.value = (await api.listHonors().catch(() => ({ list: [] }))).list || [];
+  academicRisks.value = (await api.listAcademicRisks().catch(() => ({ list: [] }))).list || [];
+  academicPlans.value = (await api.listAcademicPlans().catch(() => ({ list: [] }))).list || [];
+  theoryQuestions.value = (await api.listTheoryQuestionAdmin().catch(() => ({ list: [] }))).list || [];
+  partyTimeline.value = await api.getPartyTimeline().catch(() => null);
   if (!partyForm.studentId && students.value.length) partyForm.studentId = students.value[0].studentId;
   logs.value = (await api.listAuditLogs({ limit: 20 }).catch(() => ({ list: [] }))).list || [];
   leader.value = session.value.role === ROLES.LEADER
@@ -73,15 +126,34 @@ async function load() {
 
 async function publishNotice() {
   const tags = noticeForm.tags.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
-  await api.publishNotice({
+  const result = await api.publishNotice({
     title: noticeForm.title,
     summary: noticeForm.summary,
     content: noticeForm.content,
     tags,
     targetRule: { kind: noticeForm.kind, value: noticeForm.value },
+    scheduledAt: noticeForm.scheduledAt ? new Date(noticeForm.scheduledAt).getTime() : 0,
   });
-  toast("已生成通知批次");
-  Object.assign(noticeForm, { title: "", summary: "", content: "", tags: "通知,党团", kind: "all", value: "" });
+  toast(result.scheduled ? "已生成定时通知批次" : "已生成通知批次");
+  Object.assign(noticeForm, { title: "", summary: "", content: "", tags: "通知,党团", kind: "all", value: "", scheduledAt: "" });
+  await load();
+}
+
+function batchQuery() {
+  return {
+    title: batchFilter.title,
+    batchId: batchFilter.batchId,
+    status: batchFilter.status,
+  };
+}
+
+async function applyBatchFilter() {
+  batches.value = (await api.listWorkbenchBatches(batchQuery()).catch(() => ({ list: [] }))).list || [];
+}
+
+async function dispatchScheduled() {
+  const result = await api.dispatchScheduledNotices();
+  toast(`已派发 ${result.dispatched} 个到期批次`);
   await load();
 }
 
@@ -119,6 +191,7 @@ function resetKnowledgeForm() {
     body: "",
     sensitiveHint: false,
     online: true,
+    attachments: [],
   });
 }
 
@@ -132,6 +205,7 @@ function editKnowledge(item) {
     body: item.body || "",
     sensitiveHint: Boolean(item.sensitiveHint),
     online: item.online !== false,
+    attachments: item.attachments || [],
   });
 }
 
@@ -145,7 +219,20 @@ function fillFromMiss(item) {
     body: "",
     sensitiveHint: false,
     online: false,
+    attachments: [],
   });
+}
+
+function onKnowledgeFiles(event) {
+  knowledgeForm.attachments = [...knowledgeForm.attachments, ...Array.from(event.target.files || [])];
+}
+
+function isNativeFile(item) {
+  return typeof File !== "undefined" && item instanceof File;
+}
+
+async function uploadKnowledgeAttachments() {
+  return Promise.all(knowledgeForm.attachments.map(async (item) => (isNativeFile(item) ? api.uploadFile(item, "knowledge") : item)));
 }
 
 function knowledgePayload() {
@@ -156,6 +243,7 @@ function knowledgePayload() {
     summary: knowledgeForm.summary,
     body: knowledgeForm.body,
     sensitiveHint: knowledgeForm.sensitiveHint,
+    attachments: knowledgeForm.attachments,
     online: knowledgeForm.online,
   };
 }
@@ -174,6 +262,7 @@ async function saveKnowledge() {
     toast("请填写知识条目标题和摘要");
     return;
   }
+  knowledgeForm.attachments = await uploadKnowledgeAttachments();
   if (knowledgeForm.id) {
     await api.updateKnowledge(knowledgeForm.id, knowledgePayload());
     toast("知识条目已更新");
@@ -202,10 +291,101 @@ async function advanceParty() {
   await load();
 }
 
+function stageName(key) {
+  return FLOW_STAGES.find((stage) => stage.key === key)?.name || key;
+}
+
+async function savePartyTimeline() {
+  if (!partyTimeline.value?.rules?.length) {
+    toast("暂无可保存的时间线规则");
+    return;
+  }
+  partyTimeline.value = await api.updatePartyTimeline(partyTimeline.value.rules);
+  toast("党团标准时间线已保存");
+}
+
+async function refreshPartyReminders() {
+  const result = await api.refreshPartyReminders();
+  toast(`已刷新 ${result.changed} 名学生的提醒任务`);
+  await load();
+}
+
 async function exportStudents() {
   const blob = await api.exportStudents();
   saveBlob(blob, "学生画像导出.csv");
   toast("学生画像导出已开始");
+}
+
+function canEditStudentField(field) {
+  return Boolean(fieldPolicy.value?.editable?.includes(field));
+}
+
+function editStudent(item) {
+  Object.assign(studentForm, {
+    studentId: item.studentId,
+    name: item.name || "",
+    grade: item.grade || "",
+    major: item.major || "",
+    className: item.className || "",
+    nation: item.nation || "",
+    phone: item.phone || "",
+    politicalStatus: item.politicalStatus || "",
+    tutor: item.tutor || "",
+    hometown: item.hometown || "",
+    extensionText: JSON.stringify(item.extension || {}, null, 2),
+  });
+}
+
+async function saveStudentProfile() {
+  if (!studentForm.studentId) {
+    toast("请选择学生");
+    return;
+  }
+  let extension = {};
+  try {
+    extension = JSON.parse(studentForm.extensionText || "{}");
+  } catch (error) {
+    toast("扩展画像必须是 JSON 对象");
+    return;
+  }
+  const payload = {};
+  ["name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown"].forEach((field) => {
+    if (canEditStudentField(field)) payload[field] = studentForm[field];
+  });
+  if (canEditStudentField("extension")) payload.extension = extension;
+  await api.updateStudent(studentForm.studentId, payload);
+  toast("学生画像已更新");
+  await load();
+}
+
+function onStudentImportFile(event) {
+  studentImportFile.value = event.target.files?.[0] || null;
+  studentImportResult.value = null;
+}
+
+async function previewStudentImport() {
+  if (!studentImportFile.value) {
+    toast("请选择 CSV 或 XLSX 文件");
+    return;
+  }
+  studentImportResult.value = await api.importStudents(studentImportFile.value, {
+    dryRun: true,
+    overwrite: studentImportOverwrite.value,
+  });
+  toast(studentImportResult.value.errors?.length ? "导入预检发现错误" : "导入预检通过");
+}
+
+async function commitStudentImport() {
+  if (!studentImportFile.value) {
+    toast("请选择 CSV 或 XLSX 文件");
+    return;
+  }
+  studentImportResult.value = await api.importStudents(studentImportFile.value, {
+    dryRun: false,
+    overwrite: studentImportOverwrite.value,
+  });
+  toast(studentImportResult.value.ok ? "学生数据已导入" : "导入失败，请先处理错误行");
+  if (studentImportResult.value.ok) await load();
 }
 
 function resetHonorForm() {
@@ -218,11 +398,153 @@ function resetHonorForm() {
     grade: "",
     category: "校级",
     intro: "",
+    visibility: "public",
+    attachments: [],
   });
 }
 
 function editHonor(item) {
-  Object.assign(honorForm, item);
+  Object.assign(honorForm, { ...item, attachments: item.attachments || [], visibility: item.visibility || "public" });
+}
+
+function onHonorFiles(event) {
+  honorForm.attachments = [...honorForm.attachments, ...Array.from(event.target.files || [])];
+}
+
+async function uploadHonorAttachments() {
+  return Promise.all(
+    honorForm.attachments.map(async (item) => {
+      const file = isNativeFile(item) ? await api.uploadFile(item, "honor") : item;
+      return { ...file, visibility: honorForm.visibility };
+    }),
+  );
+}
+
+function riskClass(level) {
+  if (level === "高") return "orange";
+  if (level === "低") return "green";
+  return "gray";
+}
+
+function editAcademicPlan(item) {
+  Object.assign(academicPlanForm, {
+    grade: item.grade || "",
+    major: item.major || "",
+    modulesText: JSON.stringify(item.modules || [], null, 2),
+  });
+}
+
+async function saveAcademicPlan() {
+  let modules = [];
+  try {
+    modules = JSON.parse(academicPlanForm.modulesText || "[]");
+  } catch (error) {
+    toast("培养方案模块必须是 JSON 数组");
+    return;
+  }
+  if (!academicPlanForm.grade.trim() || !academicPlanForm.major.trim() || !modules.length) {
+    toast("请填写年级、专业和模块列表");
+    return;
+  }
+  await api.saveAcademicPlan({ grade: academicPlanForm.grade, major: academicPlanForm.major, modules });
+  toast("培养方案已保存");
+  await load();
+}
+
+function resetTheoryForm() {
+  Object.assign(theoryForm, {
+    id: "",
+    stem: "",
+    optionsText: "正确;错误",
+    answer: "正确",
+    explanation: "",
+    category: "理论知识",
+    online: true,
+  });
+}
+
+function editTheoryQuestion(item) {
+  Object.assign(theoryForm, {
+    id: item.id,
+    stem: item.stem,
+    optionsText: (item.options || []).join(";"),
+    answer: item.answer,
+    explanation: item.explanation || "",
+    category: item.category || "理论知识",
+    online: item.online !== false,
+  });
+}
+
+async function saveTheoryQuestion() {
+  if (!theoryForm.stem.trim() || !theoryForm.answer.trim()) {
+    toast("请填写题干和答案");
+    return;
+  }
+  const row = {
+    id: theoryForm.id || `theory_${Date.now()}`,
+    stem: theoryForm.stem,
+    type: "single",
+    options: theoryForm.optionsText.split(/[;；]/).map((item) => item.trim()).filter(Boolean),
+    answer: theoryForm.answer,
+    explanation: theoryForm.explanation,
+    category: theoryForm.category,
+    online: theoryForm.online,
+  };
+  const list = theoryForm.id
+    ? theoryQuestions.value.map((item) => (item.id === theoryForm.id ? row : item))
+    : [row, ...theoryQuestions.value];
+  await api.saveTheoryQuestions(list);
+  toast("理论题库已保存");
+  resetTheoryForm();
+  await load();
+}
+
+function onTheoryImportFile(event) {
+  theoryImportFile.value = event.target.files?.[0] || null;
+  theoryImportResult.value = null;
+}
+
+async function previewTheoryImport() {
+  if (!theoryImportFile.value) {
+    toast("请选择题库 CSV 文件");
+    return;
+  }
+  theoryImportResult.value = await api.importTheoryQuestions(theoryImportFile.value, { dryRun: true });
+  toast(theoryImportResult.value.errors?.length ? "题库预检发现错误" : "题库预检通过");
+}
+
+async function commitTheoryImport() {
+  if (!theoryImportFile.value) {
+    toast("请选择题库 CSV 文件");
+    return;
+  }
+  theoryImportResult.value = await api.importTheoryQuestions(theoryImportFile.value, { dryRun: false });
+  toast(theoryImportResult.value.ok ? "题库已导入" : "导入失败，请处理错误行");
+  if (theoryImportResult.value.ok) await load();
+}
+
+function onAcademicPlanImportFile(event) {
+  academicPlanImportFile.value = event.target.files?.[0] || null;
+  academicPlanImportResult.value = null;
+}
+
+async function previewAcademicPlanImport() {
+  if (!academicPlanImportFile.value) {
+    toast("请选择培养方案 CSV 文件");
+    return;
+  }
+  academicPlanImportResult.value = await api.importAcademicPlans(academicPlanImportFile.value, { dryRun: true });
+  toast(academicPlanImportResult.value.errors?.length ? "培养方案预检发现错误" : "培养方案预检通过");
+}
+
+async function commitAcademicPlanImport() {
+  if (!academicPlanImportFile.value) {
+    toast("请选择培养方案 CSV 文件");
+    return;
+  }
+  academicPlanImportResult.value = await api.importAcademicPlans(academicPlanImportFile.value, { dryRun: false });
+  toast(academicPlanImportResult.value.ok ? "培养方案已导入" : "导入失败，请处理错误行");
+  if (academicPlanImportResult.value.ok) await load();
 }
 
 async function saveHonor() {
@@ -230,6 +552,7 @@ async function saveHonor() {
     toast("请填写荣誉名称和获奖人");
     return;
   }
+  honorForm.attachments = await uploadHonorAttachments();
   const payload = { ...honorForm, year: Number(honorForm.year) };
   if (honorForm.id) {
     await api.updateHonor(honorForm.id, payload);
@@ -254,7 +577,7 @@ async function saveHonor() {
       <div class="card"><div class="muted">待审批</div><div style="font-size:28px;font-weight:700">{{ summary?.pendingApps }}</div></div>
       <div class="card"><div class="muted">通知批次</div><div style="font-size:28px;font-weight:700">{{ summary?.batches }}</div></div>
       <div class="card"><div class="muted">未命中词</div><div style="font-size:28px;font-weight:700">{{ misses.length || summary?.miss || 0 }}</div></div>
-      <div class="card"><div class="muted">短信模拟</div><div style="font-size:28px;font-weight:700">{{ sms.length || summary?.sms || 0 }}</div></div>
+      <div class="card"><div class="muted">短信记录</div><div style="font-size:28px;font-weight:700">{{ sms.length || summary?.sms || 0 }}</div></div>
     </div>
 
     <div v-if="leader" class="section-title">领导看板</div>
@@ -301,6 +624,10 @@ async function saveHonor() {
             <option value="major">按专业</option>
           </select>
           <input v-model="noticeForm.value" placeholder="规则值，如 2024级 / 软件工程" />
+          <label>
+            定时发送
+            <input v-model="noticeForm.scheduledAt" type="datetime-local" />
+          </label>
           <button class="primary" :disabled="session.role === ROLES.LEADER">发布</button>
         </form>
       </section>
@@ -333,12 +660,202 @@ async function saveHonor() {
       </form>
     </section>
 
+    <section class="card" v-if="partyTimeline && [ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
+      <div class="row between">
+        <h3>党团标准时间线</h3>
+        <div class="row wrap" v-if="session.role === ROLES.TEACHER">
+          <button @click="refreshPartyReminders">刷新提醒</button>
+          <button class="primary" @click="savePartyTimeline">保存规则</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th>阶段</th><th>阶段周期(天)</th><th>提前提醒(天)</th><th>材料要求</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="rule in partyTimeline.rules" :key="rule.stageKey">
+              <td>{{ stageName(rule.stageKey) }}</td>
+              <td><input v-model.number="rule.durationDays" type="number" min="0" :disabled="session.role !== ROLES.TEACHER" /></td>
+              <td><input v-model.number="rule.remindBeforeDays" type="number" min="0" :disabled="session.role !== ROLES.TEACHER" /></td>
+              <td><input v-model="rule.material" :disabled="session.role !== ROLES.TEACHER" /></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted">保存规则后点击刷新提醒，系统会按当前阶段为学生生成或更新待办任务。</p>
+    </section>
+
+    <section class="card" v-if="[ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
+      <div class="row between">
+        <h3>理论自测题库</h3>
+        <span class="tag gray">{{ theoryQuestions.length }} 题</span>
+      </div>
+      <div class="grid cols-2">
+        <div class="stack">
+          <article v-for="item in theoryQuestions.slice(0, 8)" :key="item.id" class="card">
+            <div class="row between">
+              <strong>{{ item.stem }}</strong>
+              <span class="tag" :class="item.online === false ? 'gray' : 'green'">{{ item.online === false ? "下线" : "上线" }}</span>
+            </div>
+            <p class="muted">{{ item.category }} · 答案 {{ item.answer }}</p>
+            <button v-if="session.role === ROLES.TEACHER" @click="editTheoryQuestion(item)">编辑</button>
+          </article>
+        </div>
+        <form class="form-grid" @submit.prevent="saveTheoryQuestion">
+          <input v-model="theoryForm.stem" :disabled="session.role !== ROLES.TEACHER" placeholder="题干" />
+          <input v-model="theoryForm.category" :disabled="session.role !== ROLES.TEACHER" placeholder="分类" />
+          <input v-model="theoryForm.optionsText" :disabled="session.role !== ROLES.TEACHER" placeholder="选项，用分号分隔" />
+          <input v-model="theoryForm.answer" :disabled="session.role !== ROLES.TEACHER" placeholder="答案" />
+          <textarea v-model="theoryForm.explanation" class="span-2" :disabled="session.role !== ROLES.TEACHER" placeholder="解析"></textarea>
+          <label class="row">
+            <input v-model="theoryForm.online" type="checkbox" :disabled="session.role !== ROLES.TEACHER" />
+            上线
+          </label>
+          <label v-if="session.role === ROLES.TEACHER">
+            CSV 导入题库
+            <input type="file" accept=".csv" @change="onTheoryImportFile" />
+          </label>
+          <div class="span-2 row wrap" v-if="session.role === ROLES.TEACHER">
+            <button class="primary">{{ theoryForm.id ? "保存题目" : "新增题目" }}</button>
+            <button type="button" @click="resetTheoryForm">清空</button>
+            <button type="button" @click="previewTheoryImport">预检导入</button>
+            <button type="button" @click="commitTheoryImport">确认导入</button>
+          </div>
+          <div v-if="theoryImportResult" class="span-2 card">
+            <p class="muted">共 {{ theoryImportResult.total }} 行，预检题目 {{ theoryImportResult.questions?.length || 0 }} 题</p>
+            <p v-for="error in theoryImportResult.errors || []" :key="`${error.row}-${error.field}`" class="muted">
+              第 {{ error.row }} 行 · {{ error.field }} · {{ error.message }}
+            </p>
+          </div>
+        </form>
+      </div>
+    </section>
+
     <section class="card" v-if="session.role === ROLES.TEACHER">
       <div class="row between">
         <h3>学生画像导出</h3>
         <button class="primary" @click="exportStudents">导出 CSV</button>
       </div>
-      <p class="muted">导出默认使用脱敏手机号，后续可扩展 Excel 导入和字段白名单。</p>
+      <p class="muted">导出默认使用脱敏手机号；导入支持 CSV，后端也预留 XLSX 解析能力。</p>
+      <div class="form-grid">
+        <label class="span-2">
+          学生数据文件
+          <input type="file" accept=".csv,.xlsx" @change="onStudentImportFile" />
+        </label>
+        <label class="row">
+          <input v-model="studentImportOverwrite" type="checkbox" />
+          覆盖已有学号
+        </label>
+        <div class="row wrap">
+          <button @click="previewStudentImport">预检导入</button>
+          <button class="primary" @click="commitStudentImport">确认导入</button>
+        </div>
+      </div>
+      <div v-if="studentImportResult" class="stack">
+        <p class="muted">
+          共 {{ studentImportResult.total }} 行，预计新增 {{ studentImportResult.created }}，更新 {{ studentImportResult.updated }}
+        </p>
+        <div v-if="studentImportResult.errors?.length" class="card">
+          <strong>错误行</strong>
+          <p v-for="error in studentImportResult.errors.slice(0, 5)" :key="`${error.row}-${error.field}`" class="muted">
+            第 {{ error.row }} 行 · {{ error.field }} · {{ error.message }}
+          </p>
+        </div>
+        <div v-else class="card">
+          <strong>预览</strong>
+          <p v-for="row in studentImportResult.preview || []" :key="row.studentId" class="muted">
+            {{ row.studentId }} · {{ row.name }} · {{ row.grade }} · {{ row.major }} · {{ row.className }}
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" v-if="[ROLES.TEACHER, ROLES.COORDINATOR].includes(session.role)">
+      <div class="row between">
+        <h3>学生画像维护</h3>
+        <span class="tag gray">可编辑 {{ fieldPolicy?.editable?.length || 0 }} 项</span>
+      </div>
+      <div class="grid cols-2">
+        <div class="stack">
+          <article v-for="item in students.slice(0, 8)" :key="item.studentId" class="card row between">
+            <span>{{ item.name }} · {{ item.studentId }}<br /><span class="muted">{{ item.className }} · {{ item.politicalStatus }}</span></span>
+            <button @click="editStudent(item)">编辑</button>
+          </article>
+        </div>
+        <form class="form-grid" @submit.prevent="saveStudentProfile">
+          <input v-model="studentForm.studentId" disabled placeholder="学号" />
+          <input v-model="studentForm.name" :disabled="!canEditStudentField('name')" placeholder="姓名" />
+          <input v-model="studentForm.grade" :disabled="!canEditStudentField('grade')" placeholder="年级" />
+          <input v-model="studentForm.major" :disabled="!canEditStudentField('major')" placeholder="专业" />
+          <input v-model="studentForm.className" :disabled="!canEditStudentField('className')" placeholder="班级" />
+          <input v-model="studentForm.nation" :disabled="!canEditStudentField('nation')" placeholder="民族" />
+          <input v-model="studentForm.phone" :disabled="!canEditStudentField('phone')" placeholder="手机号" />
+          <input v-model="studentForm.politicalStatus" :disabled="!canEditStudentField('politicalStatus')" placeholder="政治面貌" />
+          <input v-model="studentForm.tutor" :disabled="!canEditStudentField('tutor')" placeholder="导师" />
+          <input v-model="studentForm.hometown" :disabled="!canEditStudentField('hometown')" placeholder="生源地/户籍地" />
+          <textarea v-model="studentForm.extensionText" class="span-2" :disabled="!canEditStudentField('extension')" placeholder="扩展画像 JSON"></textarea>
+          <button class="primary span-2">保存画像</button>
+        </form>
+      </div>
+    </section>
+
+    <section v-if="[ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
+      <div class="section-title">学业风险学生</div>
+      <div class="stack">
+        <article v-for="item in academicRisks.slice(0, 6)" :key="item.studentId" class="card">
+          <div class="row between">
+            <strong>{{ item.name }} · {{ item.studentId }}</strong>
+            <span class="tag" :class="riskClass(item.riskLevel)">风险 {{ item.riskLevel }}</span>
+          </div>
+          <p class="muted">{{ item.grade }} · {{ item.major }} · {{ item.className }} · 总缺口 {{ item.totalGap }}</p>
+          <p v-if="item.gaps?.length">
+            <span v-for="gap in item.gaps.slice(0, 3)" :key="gap.key" class="tag gray">
+              {{ gap.name }} 缺 {{ gap.gap }}
+            </span>
+          </p>
+          <p v-else class="muted">暂无明显学分缺口或缺少学业数据。</p>
+        </article>
+        <div v-if="!academicRisks.length" class="empty card">暂无学业风险数据</div>
+      </div>
+    </section>
+
+    <section class="card" v-if="[ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
+      <div class="row between">
+        <h3>培养方案维护</h3>
+        <span class="tag gray">{{ academicPlans.length }} 个方案</span>
+      </div>
+      <div class="grid cols-2">
+        <div class="stack">
+          <article v-for="item in academicPlans.slice(0, 6)" :key="item.key" class="card">
+            <div class="row between">
+              <strong>{{ item.grade }} · {{ item.major }}</strong>
+              <button v-if="session.role === ROLES.TEACHER" @click="editAcademicPlan(item)">编辑</button>
+            </div>
+            <p class="muted">{{ item.modules?.length || 0 }} 个模块 · 总要求 {{ (item.modules || []).reduce((sum, row) => sum + Number(row.required || 0), 0) }} 学分</p>
+          </article>
+        </div>
+        <form class="form-grid" @submit.prevent="saveAcademicPlan">
+          <input v-model="academicPlanForm.grade" :disabled="session.role !== ROLES.TEACHER" placeholder="年级，如 2024级" />
+          <input v-model="academicPlanForm.major" :disabled="session.role !== ROLES.TEACHER" placeholder="专业，如 软件工程" />
+          <textarea v-model="academicPlanForm.modulesText" class="span-2" :disabled="session.role !== ROLES.TEACHER" placeholder='[{"key":"major_core","name":"专业核心","required":28}]'></textarea>
+          <label class="span-2" v-if="session.role === ROLES.TEACHER">
+            CSV 导入培养方案
+            <input type="file" accept=".csv" @change="onAcademicPlanImportFile" />
+          </label>
+          <div class="span-2 row wrap" v-if="session.role === ROLES.TEACHER">
+            <button class="primary">保存方案</button>
+            <button type="button" @click="previewAcademicPlanImport">预检导入</button>
+            <button type="button" @click="commitAcademicPlanImport">确认导入</button>
+          </div>
+          <div v-if="academicPlanImportResult" class="span-2 card">
+            <p class="muted">共 {{ academicPlanImportResult.total }} 行，涉及 {{ academicPlanImportResult.plans?.length || 0 }} 个方案</p>
+            <p v-for="error in academicPlanImportResult.errors || []" :key="`${error.row}-${error.field}`" class="muted">
+              第 {{ error.row }} 行 · {{ error.field }} · {{ error.message }}
+            </p>
+          </div>
+        </form>
+      </div>
     </section>
 
     <div class="grid cols-2">
@@ -352,6 +869,18 @@ async function saveHonor() {
           <input v-model="honorForm.grade" placeholder="年级" />
           <input v-model="honorForm.major" placeholder="专业" />
           <textarea v-model="honorForm.intro" class="span-2" placeholder="简介"></textarea>
+          <select v-model="honorForm.visibility">
+            <option value="public">附件公开</option>
+            <option value="restricted">附件限管理端</option>
+          </select>
+          <label>
+            证明材料
+            <input type="file" multiple @change="onHonorFiles" />
+          </label>
+          <p v-if="honorForm.attachments.length" class="muted span-2">
+            已绑定 {{ honorForm.attachments.length }} 个材料：
+            <span v-for="file in honorForm.attachments" :key="file.id || file.name" class="tag gray">{{ file.name }}</span>
+          </p>
           <div class="span-2 row">
             <button class="primary">{{ honorForm.id ? "保存荣誉" : "新增荣誉" }}</button>
             <button type="button" @click="resetHonorForm">清空</button>
@@ -366,6 +895,7 @@ async function saveHonor() {
             <strong>{{ item.title }}</strong>
             <p class="muted">{{ item.winner }} · {{ item.year }} · {{ item.category }}</p>
             <p>{{ item.intro }}</p>
+            <p v-if="item.attachments?.length" class="muted">证明材料 {{ item.attachments.length }} 个 · {{ item.visibility === "restricted" ? "限管理端" : "公开" }}</p>
             <button v-if="session.role === ROLES.TEACHER" @click="editHonor(item)">编辑</button>
           </article>
           <div v-if="!honors.length" class="empty card">暂无荣誉条目</div>
@@ -389,16 +919,34 @@ async function saveHonor() {
       </div>
     </section>
 
-    <div class="section-title">批次统计</div>
+    <div class="row between">
+      <div class="section-title">批次统计</div>
+      <div class="row wrap">
+        <input v-model="batchFilter.title" placeholder="标题筛选" />
+        <input v-model="batchFilter.batchId" placeholder="批次号" />
+        <select v-model="batchFilter.status">
+          <option value="">全部状态</option>
+          <option value="sent">已发送</option>
+          <option value="scheduled">待发送</option>
+        </select>
+        <button @click="applyBatchFilter">筛选</button>
+        <button v-if="session.role === ROLES.TEACHER" class="primary" @click="dispatchScheduled">派发到期</button>
+      </div>
+    </div>
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th>批次</th><th>渠道</th><th>发送/失败</th><th>送达/失败</th><th>已读</th><th>可观测性</th></tr>
+          <tr><th>批次</th><th>状态</th><th>渠道</th><th>发送/失败</th><th>送达/失败</th><th>已读</th><th>可观测性</th></tr>
         </thead>
         <tbody>
           <template v-for="batch in batches" :key="batch.id">
             <tr v-for="channel in batch.channels" :key="`${batch.id}-${channel.name}`">
-              <td>{{ batch.title }}<br /><span class="muted">{{ batch.id }}</span></td>
+              <td>
+                {{ batch.title }}<br />
+                <span class="muted">{{ batch.id }}</span>
+                <span v-if="batch.scheduledAt" class="muted"><br />{{ formatTime(batch.scheduledAt) }}</span>
+              </td>
+              <td><span class="tag" :class="batch.status === 'scheduled' ? 'orange' : 'green'">{{ batch.status === "scheduled" ? "待发送" : "已发送" }}</span></td>
               <td>{{ channel.name }}</td>
               <td>{{ channel.sendOk }}/{{ channel.sendFail }}</td>
               <td>{{ channel.deliverOk }}/{{ channel.deliverFail }}</td>
@@ -429,6 +977,14 @@ async function saveHonor() {
           <input v-model="knowledgeForm.tags" placeholder="标签，逗号分隔" :disabled="session.role !== ROLES.TEACHER" />
           <textarea v-model="knowledgeForm.summary" placeholder="标准摘要" :disabled="session.role !== ROLES.TEACHER"></textarea>
           <textarea v-model="knowledgeForm.body" placeholder="详细依据、办理步骤或官方链接" :disabled="session.role !== ROLES.TEACHER"></textarea>
+          <label>
+            政策附件
+            <input type="file" multiple :disabled="session.role !== ROLES.TEACHER" @change="onKnowledgeFiles" />
+          </label>
+          <p v-if="knowledgeForm.attachments.length" class="muted">
+            已绑定 {{ knowledgeForm.attachments.length }} 个附件：
+            <span v-for="file in knowledgeForm.attachments" :key="file.id || file.name" class="tag gray">{{ file.name }}</span>
+          </p>
           <label class="row">
             <input v-model="knowledgeForm.sensitiveHint" type="checkbox" :disabled="session.role !== ROLES.TEACHER" />
             敏感内容仅展示摘要
@@ -454,6 +1010,7 @@ async function saveHonor() {
             </div>
             <p class="muted">{{ item.category }} · 命中 {{ item.hitCount || 0 }}</p>
             <p>{{ item.summary }}</p>
+            <p v-if="item.attachments?.length" class="muted">附件 {{ item.attachments.length }} 个</p>
             <div class="row wrap" v-if="session.role === ROLES.TEACHER">
               <button @click="editKnowledge(item)">编辑</button>
               <button @click="toggleKnowledge(item)">{{ item.online === false ? "上线" : "下线" }}</button>

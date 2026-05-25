@@ -33,7 +33,7 @@ async function saveProgress(event) {
 }
 
 async function uploadTranscript() {
-  await api.uploadTranscript({ name: "成绩单.pdf", note: "Vue Web 演示：已登记元数据" });
+  await api.uploadTranscript({ name: "成绩单.pdf", note: "学生端登记：成绩单文件已提交审核队列" });
   toast("已登记上传记录");
   await load();
 }
@@ -44,7 +44,7 @@ async function uploadTranscript() {
     <section>
       <div class="card">
         <h3>综合风险：{{ report.riskLevel }}</h3>
-        <p class="muted">当前 Web 版保留成绩单解析接口位，先使用培养方案与自报学分比对。</p>
+        <p class="muted">系统依据培养方案与已获学分进行比对，展示模块缺口和风险提示。</p>
         <button @click="uploadTranscript">登记成绩单上传</button>
       </div>
 

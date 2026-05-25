@@ -149,7 +149,7 @@ function mkKnowledge(id, title, category, tags, summary, sensitiveHint) {
 }
 
 function mkNotice(id, title, tags, summary, publishedAt) {
-  return { id, title, tags, summary, content: `${summary}\n\n本通知由学院学工发布，具体材料要求请关注附件或后续补充说明。`, source: "学院学工", publishedAt };
+  return { id, title, tags, summary, content: `${summary}\n\n本通知由学院学工发布，具体材料要求请关注附件或补充说明。`, source: "学院学工", publishedAt };
 }
 
 function mkApp(id, studentId, type, subtype, status, reason, attachments, teacherComment = "") {

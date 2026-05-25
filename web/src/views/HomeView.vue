@@ -11,12 +11,12 @@ const unread = ref(0);
 const me = ref(null);
 
 const features = [
-  ["knowledge", "政策与模板", "标准答案优先、未命中词沉淀"],
-  ["party", "党团流程", "阶段、历史节点、提醒任务"],
-  ["apply", "办事申请", "证明 / 请假 / 盖章审批闭环"],
-  ["notices", "通知公告", "标签、定向推送、批次统计"],
+  ["knowledge", "政策与模板", "政策检索、标准答复、模板材料"],
+  ["party", "党团流程", "阶段进度、历史节点、任务提醒"],
+  ["apply", "办事申请", "证明 / 请假 / 盖章线上审批"],
+  ["notices", "通知公告", "标签分类、定向通知、批次追踪"],
   ["academic", "学业分析", "培养方案比对与风险提示"],
-  ["workbench", "管理工作台", "审批、发布、统计、日志"],
+  ["workbench", "管理工作台", "审批、发布、统计、审计日志"],
 ];
 
 onMounted(load);
@@ -38,7 +38,7 @@ async function load() {
     <section class="card hero">
       <h2>一站式学生事务入口</h2>
       <p class="muted">
-        当前身份：{{ me?.name }} · {{ ROLE_LABEL[session.role] }}。Web 端已切换为 Vue 3 + Vite 实现。
+        当前身份：{{ me?.name }} · {{ ROLE_LABEL[session.role] }}。请通过导航办理事务、查看通知并跟进党团流程。
       </p>
     </section>
     <section class="card">
