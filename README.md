@@ -53,7 +53,7 @@ Cloud: http://10.10.0.21/
 cd web && VITE_API_BASE=/api npm run build
 ```
 
-云部署详见 [docs/deploy-cloud.md](docs/deploy-cloud.md)。验收清单见 [docs/acceptance-checklist.md](docs/acceptance-checklist.md)。
+云部署详见 [docs/deploy-cloud.md](docs/deploy-cloud.md)。**新手 SSH + 更新**见 [docs/ssh-and-deploy-beginner.md](docs/ssh-and-deploy-beginner.md)。验收清单见 [docs/acceptance-checklist.md](docs/acceptance-checklist.md)。
 
 前端开发环境可在右上角切换 Mock/Remote。生产包默认 Remote + `/api`。
 

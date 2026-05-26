@@ -1,0 +1,17 @@
+[Unit]
+Description=Student Service Platform (FastAPI)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=@APP_ROOT@
+EnvironmentFile=@ENV_FILE@
+Environment=PYTHONPATH=@APP_ROOT@/backend
+Environment=PIP_CACHE_DIR=@BASE@/.cache/pip
+ExecStart=@VENV_DIR@/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
