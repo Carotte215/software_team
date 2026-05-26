@@ -45,3 +45,43 @@ NOTICES = [
     ("n_award", "奖助学金材料补交通知", ["奖助学金"], "尚未补齐材料的同学请在周五前补交扫描件。", NOW - timedelta(days=4)),
     ("n_party", "支部组织生活会安排", ["党团"], "本周五晚进行专题组织生活会，请提前准备发言提纲。", NOW - timedelta(hours=9)),
 ]
+
+THEORY_QUESTIONS = [
+    ("theory_q1", "入党申请人递交申请书后，通常应接受党组织的谈话和培养教育。", "正确;错误", "正确", "入党申请提交后，党组织会安排谈话并开展培养教育。", "入党流程"),
+    ("theory_q2", "发展对象阶段通常需要完成政审、公示和集中培训等材料或环节。", "正确;错误", "正确", "发展对象阶段需按组织要求完成相关审查和培训材料。", "发展对象"),
+    ("theory_q3", "预备党员的预备期为一年，从支部大会通过其为预备党员之日算起。", "正确;错误", "正确", "预备期一般为一年。", "预备党员"),
+    ("theory_q4", "入党积极分子培养教育时间一般不少于一年。", "正确;错误", "正确", "积极分子培养考察期通常不少于一年。", "积极分子"),
+    ("theory_q5", "团员推优是确定入党积极分子的重要途径之一。", "正确;错误", "正确", "团支部推优是常见程序。", "入党流程"),
+    ("theory_q6", "发展对象可以不参加短期集中培训直接入党。", "正确;错误", "错误", "发展对象须参加集中培训并结业。", "发展对象"),
+    ("theory_q7", "思想汇报应结合个人实际，定期向党组织汇报。", "正确;错误", "正确", "思想汇报是培养考察的重要材料。", "积极分子"),
+    ("theory_q8", "正式党员享有表决权、选举权和被选举权。", "正确;错误", "正确", "这是党员的基本权利。", "正式党员"),
+]
+
+APPLICATION_TEMPLATES = [
+    (
+        "tpl_cert",
+        "在读证明模板",
+        "证明申请",
+        "在读证明",
+        """<!doctype html><html><head><meta charset="utf-8"/><title>在读证明</title>
+<style>body{font-family:SimSun,serif;padding:40px}h1{text-align:center}p{line-height:2;font-size:16px}</style></head>
+<body><h1>在读证明</h1>
+<p>兹证明 {{name}}，学号 {{studentId}}，系我院 {{grade}} {{major}} 专业 {{className}} 班在读学生。</p>
+<p>申请事由：{{reason}}</p>
+<p>特此证明。</p>
+<p style="text-align:right;margin-top:60px">学院学生工作办公室<br/>{{generatedAt}}</p></body></html>""",
+    ),
+    (
+        "tpl_leave",
+        "请假条模板",
+        "请假申请",
+        "",
+        """<!doctype html><html><head><meta charset="utf-8"/><title>请假条</title></head>
+<body style="font-family:SimSun,serif;padding:40px">
+<h2 style="text-align:center">请假条</h2>
+<p>姓名：{{name}}　学号：{{studentId}}　班级：{{className}}</p>
+<p>请假事由：{{reason}}</p>
+<p>请假时间：{{startDate}} 至 {{endDate}}</p>
+<p>申请人签名：________　日期：{{generatedAt}}</p></body></html>""",
+    ),
+]

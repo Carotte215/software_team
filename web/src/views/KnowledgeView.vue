@@ -8,6 +8,8 @@ const query = reactive({ q: "", category: "全部" });
 const list = ref([]);
 const categories = ref(["全部"]);
 const templates = ref([]);
+const expanded = ref(null);
+const previewUrl = ref("");
 
 onMounted(load);
 
@@ -19,6 +21,10 @@ async function load() {
   if (query.q.trim() && list.value.length === 0) {
     await api.recordKnowledgeMiss(query.q.trim());
   }
+}
+
+async function expandItem(item) {
+  expanded.value = await api.getKnowledge(item.id).catch(() => item);
 }
 
 function saveBlob(blob, name) {
@@ -41,6 +47,15 @@ async function downloadAttachment(file) {
   saveBlob(blob, file.name || "policy-attachment");
   toast("附件下载已开始");
 }
+
+async function previewAttachment(file) {
+  try {
+    if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
+    previewUrl.value = await api.previewFile(file);
+  } catch (error) {
+    toast("该文件类型暂不支持在线预览，请下载查看");
+  }
+}
 </script>
 
 <template>
@@ -62,14 +77,22 @@ async function downloadAttachment(file) {
             <span class="tag">{{ item.category }}</span>
           </div>
           <p>{{ item.summary }}</p>
+          <p v-if="item.matchReason" class="muted">{{ item.matchReason }}</p>
           <p>
             <span v-for="tag in item.tags" :key="tag" class="tag gray">{{ tag }}</span>
           </p>
-          <p class="muted">更新：{{ formatTime(item.updatedAt) }}</p>
+          <p class="muted">更新：{{ formatTime(item.updatedAt) }} · 阅读 {{ item.hitCount || 0 }}</p>
           <p v-if="item.sensitiveHint" class="muted">敏感内容仅展示摘要，请走官方渠道。</p>
-          <div v-if="item.attachments?.length" class="row wrap">
-            <button v-for="file in item.attachments" :key="file.id || file.name" @click="downloadAttachment(file)">
-              {{ file.name }}
+          <p v-if="item.officialLink">
+            <a :href="item.officialLink" target="_blank" rel="noopener">官方说明链接</a>
+          </p>
+          <div class="row wrap">
+            <button @click="expandItem(item)">查看详情</button>
+            <button v-for="file in item.attachments || []" :key="file.id || file.name" @click="downloadAttachment(file)">
+              下载 {{ file.name }}
+            </button>
+            <button v-for="file in item.attachments || []" :key="`${file.id}-preview`" @click="previewAttachment(file)">
+              预览 {{ file.name }}
             </button>
           </div>
         </article>
@@ -87,6 +110,11 @@ async function downloadAttachment(file) {
           </div>
           <button @click="downloadTemplate(item)">下载</button>
         </div>
+      </div>
+      <div v-if="expanded" class="card" style="margin-top:16px">
+        <h3>{{ expanded.title }}</h3>
+        <pre style="white-space:pre-wrap">{{ expanded.body || expanded.summary }}</pre>
+        <iframe v-if="previewUrl" :src="previewUrl" title="附件预览" style="width:100%;min-height:360px;margin-top:12px;border:1px solid #ddd"></iframe>
       </div>
     </section>
   </div>

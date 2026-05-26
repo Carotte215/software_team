@@ -15,6 +15,11 @@ class LoginRequest(BaseModel):
     password: str = ""
 
 
+class PasswordResetRequest(BaseModel):
+    student_id: str = Field(alias="studentId")
+    new_password: str = Field(alias="newPassword")
+
+
 class ApplicationCreate(BaseModel):
     type: str
     subtype: str = ""
@@ -59,6 +64,7 @@ class KnowledgeCreate(BaseModel):
     tags: list[str] = Field(default_factory=list)
     summary: str
     body: str = ""
+    official_link: str = Field(default="", alias="officialLink")
     sensitive_hint: bool = Field(default=False, alias="sensitiveHint")
     attachments: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -80,7 +86,53 @@ class HonorCreate(BaseModel):
     category: str = ""
     intro: str = ""
     visibility: str = "public"
+    online: bool = True
     attachments: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class HonorOnlinePut(BaseModel):
+    online: bool = True
+
+
+class ApplicationTemplateCreate(BaseModel):
+    name: str
+    apply_type: str = Field(default="", alias="applyType")
+    subtype: str = ""
+    body_html: str = Field(default="", alias="bodyHtml")
+
+
+class ApplicationTemplateUpdate(ApplicationTemplateCreate):
+    pass
+
+
+class TemplateFileCreate(BaseModel):
+    name: str
+    scene: str = ""
+    format: str = "docx"
+    file_url: str = Field(default="", alias="fileUrl")
+    file_id: str = Field(default="", alias="fileId")
+
+
+class TemplateFileUpdate(TemplateFileCreate):
+    pass
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str = Field(alias="oldPassword")
+    new_password: str = Field(alias="newPassword")
+
+
+class NoticeImport(BaseModel):
+    title: str
+    summary: str = ""
+    content: str = ""
+    tags: list[str] = Field(default_factory=list)
+    source: str = "外部导入"
+
+
+class NoticeFetchUrl(BaseModel):
+    url: str
+    source: str = "网页抓取"
 
 
 class ApiMessage(BaseModel):

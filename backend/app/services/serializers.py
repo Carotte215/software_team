@@ -13,6 +13,7 @@ from app.models import (
     TemplateFile,
 )
 from app.services.common import dt_ms, mask_phone
+from app.services.crypto_fields import decrypt_text, mask_id_card
 
 
 def student_public(row: Student, role: str) -> dict:
@@ -29,30 +30,51 @@ def student_public(row: Student, role: str) -> dict:
         "phoneMasked": mask_phone(row.phone),
     }
     if role == "teacher":
-        base.update({"phone": row.phone, "hometown": row.hometown, "idCardMasked": "**************"})
+        base.update(
+            {
+                "phone": row.phone,
+                "hometown": row.hometown,
+                "idCardMasked": mask_id_card(decrypt_text(row.id_card_encrypted)) if row.id_card_encrypted else "",
+            },
+        )
     elif role == "leader":
         base.update({"hometown": f"{row.hometown[:1]}**" if row.hometown else ""})
+    if role == "student":
+        base.pop("tutor", None)
     return base
 
 
-def knowledge(row: KnowledgeItem) -> dict:
-    return {
+def knowledge(row: KnowledgeItem, q: str = "") -> dict:
+    payload = {
         "id": row.id,
         "title": row.title,
         "category": row.category,
         "tags": row.tags or [],
-        "summary": row.summary,
-        "body": row.body,
+        "summary": row.summary if not row.sensitive_hint else f"{row.summary}（详情请通过官方渠道查阅）",
+        "body": row.body if not row.sensitive_hint else "",
+        "officialLink": row.official_link or "",
         "sensitiveHint": row.sensitive_hint,
         "attachments": row.attachments or [],
         "updatedAt": dt_ms(row.updated_at),
         "hitCount": row.hit_count,
         "online": row.online,
     }
+    if q and q.lower() in (row.title or "").lower():
+        payload["matchReason"] = "标题匹配"
+    elif q:
+        payload["matchReason"] = "内容匹配"
+    return payload
 
 
 def template(row: TemplateFile) -> dict:
-    return {"id": row.id, "name": row.name, "scene": row.scene, "format": row.format, "fileUrl": row.file_url}
+    return {
+        "id": row.id,
+        "name": row.name,
+        "scene": row.scene,
+        "format": row.format,
+        "fileUrl": row.file_url or (f"/api/templates/{row.id}/download" if row.id else ""),
+        "fileId": row.file_id or "",
+    }
 
 
 def notice(row: Notice) -> dict:
@@ -110,6 +132,18 @@ def honor(row: Honor) -> dict:
     }
 
 
+def honor_public(row: Honor, role: str) -> dict:
+    payload = honor(row)
+    attachments = row.attachments or []
+    if role not in {"teacher", "leader"}:
+        if row.visibility == "restricted":
+            attachments = []
+        else:
+            attachments = [a for a in attachments if a.get("visibility") != "restricted"]
+    payload.update({"visibility": row.visibility or "public", "online": row.online is not False, "attachments": attachments})
+    return payload
+
+
 def party(row: PartyProgress) -> dict:
     return {"studentId": row.student_id, "currentKey": row.current_key, "history": row.history or [], "tasks": row.tasks or []}
 
@@ -123,7 +157,12 @@ def academic_plan(row: AcademicPlan | None) -> dict | None:
 def academic_progress(row: AcademicProgress | None) -> dict | None:
     if not row:
         return None
-    return {"studentId": row.student_id, "modules": row.modules or [], "uploads": row.uploads or []}
+    return {
+        "studentId": row.student_id,
+        "modules": row.modules or [],
+        "uploads": row.uploads or [],
+        "courses": row.courses or [],
+    }
 
 
 def batch(row: NoticeBatch) -> dict:

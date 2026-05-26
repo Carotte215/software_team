@@ -23,9 +23,12 @@ class Student(Base, TimestampMixin):
     class_name: Mapped[str] = mapped_column(String(64), nullable=False)
     nation: Mapped[str] = mapped_column(String(32), default="")
     phone: Mapped[str] = mapped_column(String(32), default="")
+    email: Mapped[str] = mapped_column(String(128), default="")
     political_status: Mapped[str] = mapped_column(String(64), default="")
     tutor: Mapped[str] = mapped_column(String(64), default="")
     hometown: Mapped[str] = mapped_column(String(128), default="")
+    password_hash: Mapped[str] = mapped_column(String(255), default="")
+    id_card_encrypted: Mapped[str] = mapped_column(String(512), default="")
     extension: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
 
@@ -38,10 +41,19 @@ class KnowledgeItem(Base, TimestampMixin):
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     body: Mapped[str] = mapped_column(Text, default="")
+    official_link: Mapped[str] = mapped_column(String(500), default="")
     sensitive_hint: Mapped[bool] = mapped_column(Boolean, default=False)
     attachments: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
     hit_count: Mapped[int] = mapped_column(Integer, default=0)
     online: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class KnowledgeMissKeyword(Base, TimestampMixin):
+    __tablename__ = "knowledge_miss_keywords"
+
+    keyword: Mapped[str] = mapped_column(String(200), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, default=1)
+    last_student_id: Mapped[str] = mapped_column(String(32), default="")
 
 
 class TemplateFile(Base, TimestampMixin):
@@ -52,6 +64,7 @@ class TemplateFile(Base, TimestampMixin):
     scene: Mapped[str] = mapped_column(String(80), default="")
     format: Mapped[str] = mapped_column(String(20), default="")
     file_url: Mapped[str] = mapped_column(String(500), default="")
+    file_id: Mapped[str] = mapped_column(String(64), default="")
 
 
 class Notice(Base, TimestampMixin):
@@ -94,6 +107,16 @@ class Application(Base, TimestampMixin):
     audit_trail: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
 
 
+class ApplicationTemplate(Base, TimestampMixin):
+    __tablename__ = "application_templates"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    apply_type: Mapped[str] = mapped_column(String(64), default="")
+    subtype: Mapped[str] = mapped_column(String(64), default="")
+    body_html: Mapped[str] = mapped_column(Text, default="")
+
+
 class Honor(Base, TimestampMixin):
     __tablename__ = "honors"
 
@@ -105,6 +128,9 @@ class Honor(Base, TimestampMixin):
     grade: Mapped[str] = mapped_column(String(32), default="")
     category: Mapped[str] = mapped_column(String(64), default="")
     intro: Mapped[str] = mapped_column(Text, default="")
+    visibility: Mapped[str] = mapped_column(String(32), default="public")
+    online: Mapped[bool] = mapped_column(Boolean, default=True)
+    attachments: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
 
 
 class PartyProgress(Base, TimestampMixin):
@@ -114,6 +140,46 @@ class PartyProgress(Base, TimestampMixin):
     current_key: Mapped[str] = mapped_column(String(64), default="applicant")
     history: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
     tasks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+
+
+class PartyStage(Base, TimestampMixin):
+    __tablename__ = "party_stages"
+
+    stage_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    desc: Mapped[str] = mapped_column("description", Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class PartyTimelineRule(Base, TimestampMixin):
+    __tablename__ = "party_timeline_rules"
+
+    stage_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    duration_days: Mapped[int] = mapped_column(Integer, default=0)
+    remind_before_days: Mapped[int] = mapped_column(Integer, default=0)
+    material: Mapped[str] = mapped_column(Text, default="")
+
+
+class TheoryQuestion(Base, TimestampMixin):
+    __tablename__ = "theory_questions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    stem: Mapped[str] = mapped_column(Text, nullable=False)
+    options: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    answer: Mapped[str] = mapped_column(String(200), default="")
+    explanation: Mapped[str] = mapped_column(Text, default="")
+    category: Mapped[str] = mapped_column(String(64), default="")
+    online: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class TheoryAttempt(Base, TimestampMixin):
+    __tablename__ = "theory_attempts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    student_id: Mapped[str] = mapped_column(String(32), index=True)
+    score: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    detail: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
 
 
 class AcademicPlan(Base, TimestampMixin):
@@ -131,6 +197,7 @@ class AcademicProgress(Base, TimestampMixin):
     student_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     modules: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
     uploads: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    courses: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
 
 
 class NoticeBatch(Base, TimestampMixin):
@@ -140,6 +207,16 @@ class NoticeBatch(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     target_rule: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     channels: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+
+
+class SmsSimulation(Base, TimestampMixin):
+    __tablename__ = "sms_simulations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    batch_id: Mapped[str] = mapped_column(String(64), index=True)
+    student_id: Mapped[str] = mapped_column(String(32), index=True)
+    phone_masked: Mapped[str] = mapped_column(String(32), default="")
+    text: Mapped[str] = mapped_column(Text, default="")
 
 
 class AuditLog(Base):

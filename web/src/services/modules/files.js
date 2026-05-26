@@ -11,6 +11,13 @@ export function createFilesApi(call, { apiPath, requestBlob, sessionRef }) {
       data: { name: file.name },
       session: sessionRef.value,
     }),
+    previewFile: async (file) => {
+      const blob = await requestBlob({
+        path: `/files/${file.id || file.fileId}/preview`,
+        session: sessionRef.value,
+      });
+      return URL.createObjectURL(blob);
+    },
     downloadTemplate: (template) => requestBlob({
       path: `/templates/${template.id}/download`,
       data: { name: template.name },

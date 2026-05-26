@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.deps import CurrentSession, get_current_session
 from app.models import TemplateFile
 from app.services.common import audit, uid
+from app.services.file_access import assert_file_access
 
 router = APIRouter(tags=["files"])
 
@@ -71,6 +72,7 @@ async def upload_file(
         "suffix": suffix,
         "url": f"/api/files/{file_id}/download",
         "uploadedAt": int(datetime.now(timezone.utc).timestamp() * 1000),
+        "uploadedBy": session.student_id,
     }
     meta_path(file_id).write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
     audit(db, session, "file_upload", file_id, {"business": business, "size": size})
@@ -79,15 +81,54 @@ async def upload_file(
 
 
 @router.get("/files/{file_id}/download")
-def download_file(file_id: str, session: CurrentSession = Depends(get_current_session)) -> FileResponse:
+def download_file(
+    file_id: str,
+    db: Session = Depends(get_db),
+    session: CurrentSession = Depends(get_current_session),
+) -> FileResponse:
     meta_file = meta_path(file_id)
     if not meta_file.exists():
         raise HTTPException(status_code=404, detail="file not found")
     meta = json.loads(meta_file.read_text(encoding="utf-8"))
+    assert_file_access(db, session, file_id, meta)
     target = data_path(file_id, meta.get("suffix", ""))
     if not target.exists():
         raise HTTPException(status_code=404, detail="file not found")
     return FileResponse(target, media_type=meta.get("contentType") or "application/octet-stream", filename=meta.get("name") or target.name)
+
+
+PREVIEW_TYPES = {
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".txt": "text/plain; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
+    ".htm": "text/html; charset=utf-8",
+}
+
+
+@router.get("/files/{file_id}/preview")
+def preview_file(
+    file_id: str,
+    db: Session = Depends(get_db),
+    session: CurrentSession = Depends(get_current_session),
+) -> FileResponse:
+    meta_file = meta_path(file_id)
+    if not meta_file.exists():
+        raise HTTPException(status_code=404, detail="file not found")
+    meta = json.loads(meta_file.read_text(encoding="utf-8"))
+    assert_file_access(db, session, file_id, meta)
+    suffix = meta.get("suffix", "").lower()
+    if suffix not in PREVIEW_TYPES:
+        raise HTTPException(status_code=415, detail="preview not supported for this file type")
+    target = data_path(file_id, suffix)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="file not found")
+    media_type = PREVIEW_TYPES[suffix]
+    return FileResponse(target, media_type=media_type, filename=meta.get("name") or target.name)
 
 
 @router.get("/templates/{template_id}/download")
@@ -95,6 +136,19 @@ def download_template(template_id: str, db: Session = Depends(get_db), session: 
     row = db.get(TemplateFile, template_id)
     if not row:
         raise HTTPException(status_code=404, detail="template not found")
+    if row.file_id:
+        meta_file = meta_path(row.file_id)
+        if meta_file.exists():
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            target = data_path(row.file_id, meta.get("suffix", ""))
+            if target.exists():
+                audit(db, session, "template_download", template_id)
+                db.commit()
+                return FileResponse(
+                    target,
+                    media_type=meta.get("contentType") or "application/octet-stream",
+                    filename=meta.get("name") or row.name,
+                )
     body = (
         f"{row.name}\n\n"
         f"适用场景：{row.scene or '通用'}\n"

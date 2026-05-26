@@ -14,15 +14,18 @@ class CurrentSession:
 
 
 def get_current_session(
-    x_student_id: str = Header(default="2024201581"),
+    x_student_id: str = Header(default=""),
     x_role: str = Header(default="student"),
     authorization: str = Header(default=""),
 ) -> CurrentSession:
-    # 后续接微信登录/统一认证时，只替换这里，业务路由不需要感知认证细节。
     token = authorization.removeprefix("Bearer ").strip()
     payload = verify_token(token)
     if payload:
         return CurrentSession(student_id=payload["studentId"], role=payload["role"], token=token)
-    if get_settings().auth_mode == "token":
+
+    settings = get_settings()
+    if settings.auth_mode == "token":
         raise HTTPException(status_code=401, detail="invalid or missing token")
-    return CurrentSession(student_id=x_student_id, role=x_role, token=token)
+
+    student_id = x_student_id or "2024201581"
+    return CurrentSession(student_id=student_id, role=x_role or "student", token=token)

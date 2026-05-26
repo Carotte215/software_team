@@ -4,10 +4,14 @@ from io import StringIO
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.db.session import get_db
 from app.deps import CurrentSession, get_current_session
-from app.services.common import now_ms, uid
+from app.models import TheoryAttempt, TheoryQuestion
+from app.services.common import audit, now_ms, uid
 
 router = APIRouter(prefix="/theory", tags=["theory"])
 
@@ -15,7 +19,6 @@ DEFAULT_QUESTIONS = [
     {
         "id": "theory_q1",
         "stem": "入党申请人递交申请书后，通常应接受党组织的谈话和培养教育。",
-        "type": "single",
         "options": ["正确", "错误"],
         "answer": "正确",
         "explanation": "入党申请提交后，党组织会安排谈话并开展培养教育。",
@@ -25,7 +28,6 @@ DEFAULT_QUESTIONS = [
     {
         "id": "theory_q2",
         "stem": "发展对象阶段通常需要完成政审、公示和集中培训等材料或环节。",
-        "type": "single",
         "options": ["正确", "错误"],
         "answer": "正确",
         "explanation": "发展对象阶段需按组织要求完成相关审查和培训材料。",
@@ -36,16 +38,52 @@ DEFAULT_QUESTIONS = [
 
 
 @router.get("/questions")
-def student_questions(session: CurrentSession = Depends(get_current_session)) -> dict:
-    rows = [public_question(row) for row in read_questions() if row.get("online", True)]
-    attempts = [row for row in read_attempts() if row.get("studentId") == session.student_id]
-    return {"list": rows, "latestAttempt": attempts[0] if attempts else None}
+def student_questions(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+    import random
+    from datetime import datetime, timezone
+
+    pool = [public_question(row) for row in load_questions(db) if row.get("online", True)]
+    count = min(get_settings().theory_question_count, len(pool))
+    rows = random.sample(pool, count) if count and count < len(pool) else pool
+    latest = db.scalars(
+        select(TheoryAttempt)
+        .where(TheoryAttempt.student_id == session.student_id)
+        .order_by(TheoryAttempt.created_at.desc()),
+    ).first()
+    limit = get_settings().theory_daily_attempt_limit
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_attempts = db.scalar(
+        select(func.count())
+        .select_from(TheoryAttempt)
+        .where(TheoryAttempt.student_id == session.student_id, TheoryAttempt.created_at >= today_start),
+    ) or 0
+    return {
+        "list": rows,
+        "latestAttempt": attempt_payload(latest) if latest else None,
+        "dailyLimit": limit,
+        "todayAttempts": today_attempts,
+    }
 
 
 @router.post("/attempt")
-def submit_attempt(payload: dict, session: CurrentSession = Depends(get_current_session)) -> dict:
+def submit_attempt(payload: dict, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+    from datetime import datetime, timezone
+
+    limit = get_settings().theory_daily_attempt_limit
+    if limit > 0:
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        today_count = db.scalar(
+            select(func.count())
+            .select_from(TheoryAttempt)
+            .where(TheoryAttempt.student_id == session.student_id, TheoryAttempt.created_at >= today_start),
+        ) or 0
+        if today_count >= limit:
+            raise HTTPException(status_code=429, detail=f"今日答题次数已达上限（{limit} 次）")
+
     answers = payload.get("answers", {})
-    questions = [row for row in read_questions() if row.get("online", True)]
+    question_ids = payload.get("questionIds") or list(answers.keys())
+    all_questions = {row["id"]: row for row in load_questions(db) if row.get("online", True)}
+    questions = [all_questions[qid] for qid in question_ids if qid in all_questions]
     details = []
     correct = 0
     for question in questions:
@@ -62,33 +100,34 @@ def submit_attempt(payload: dict, session: CurrentSession = Depends(get_current_
                 "explanation": question.get("explanation", ""),
             },
         )
-    result = {
-        "id": uid("attempt"),
-        "studentId": session.student_id,
-        "at": now_ms(),
-        "total": len(questions),
-        "correct": correct,
-        "score": round(correct * 100 / len(questions), 1) if questions else 0,
-        "details": details,
-    }
-    attempts = [result, *read_attempts()]
-    write_json(attempt_path(), attempts[:200])
-    return result
+    row = TheoryAttempt(
+        id=uid("attempt"),
+        student_id=session.student_id,
+        score=int(round(correct * 100 / len(questions), 0)) if questions else 0,
+        total=len(questions),
+        detail=details,
+    )
+    db.add(row)
+    audit(db, session, "theory_attempt", row.id, {"score": row.score})
+    db.commit()
+    return attempt_payload(row, correct=correct)
 
 
 @router.get("/workbench/questions")
-def admin_questions(session: CurrentSession = Depends(get_current_session)) -> dict:
+def admin_questions(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
     if session.role not in {"teacher", "leader"}:
         raise HTTPException(status_code=403, detail="forbidden")
-    return {"list": read_questions()}
+    return {"list": load_questions(db)}
 
 
 @router.put("/workbench/questions")
-def save_questions(payload: dict, session: CurrentSession = Depends(get_current_session)) -> dict:
+def save_questions(payload: dict, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
     if session.role != "teacher":
         raise HTTPException(status_code=403, detail="forbidden")
     questions = [normalize_question(row) for row in payload.get("questions", [])]
-    write_json(question_path(), questions)
+    persist_questions(db, questions)
+    audit(db, session, "theory_questions_save", "theory_questions", {"count": len(questions)})
+    db.commit()
     return {"ok": True, "list": questions}
 
 
@@ -96,6 +135,7 @@ def save_questions(payload: dict, session: CurrentSession = Depends(get_current_
 async def import_questions(
     file: UploadFile = File(...),
     dry_run: bool = Form(default=True, alias="dryRun"),
+    db: Session = Depends(get_db),
     session: CurrentSession = Depends(get_current_session),
 ) -> dict:
     if session.role != "teacher":
@@ -105,22 +145,69 @@ async def import_questions(
     questions = [normalize_question(row) for row in rows] if not errors else []
     if dry_run or errors:
         return {"ok": not errors, "dryRun": True, "total": len(rows), "questions": questions, "errors": errors}
-    write_json(question_path(), questions)
+    persist_questions(db, questions)
+    audit(db, session, "theory_questions_import", file.filename or "theory.csv", {"count": len(questions)})
+    db.commit()
     return {"ok": True, "dryRun": False, "total": len(rows), "questions": questions, "errors": []}
 
 
-def storage_path(name: str) -> Path:
-    path = Path(get_settings().upload_dir).parent / name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
+def load_questions(db: Session) -> list[dict]:
+    rows = db.scalars(select(TheoryQuestion).order_by(TheoryQuestion.created_at)).all()
+    if rows:
+        return [question_dict(row) for row in rows]
+    legacy = read_json(question_path(), DEFAULT_QUESTIONS)
+    persist_questions(db, [normalize_question(item) for item in legacy])
+    db.commit()
+    return legacy
+
+
+def persist_questions(db: Session, questions: list[dict]) -> None:
+    existing = {row.id: row for row in db.scalars(select(TheoryQuestion)).all()}
+    seen = set()
+    for item in questions:
+        seen.add(item["id"])
+        row = existing.get(item["id"]) or TheoryQuestion(id=item["id"])
+        row.stem = item["stem"]
+        row.options = item["options"]
+        row.answer = item["answer"]
+        row.explanation = item["explanation"]
+        row.category = item["category"]
+        row.online = item["online"]
+        db.add(row)
+    for qid, row in existing.items():
+        if qid not in seen:
+            db.delete(row)
+
+
+def question_dict(row: TheoryQuestion) -> dict:
+    return {
+        "id": row.id,
+        "stem": row.stem,
+        "options": row.options or [],
+        "answer": row.answer,
+        "explanation": row.explanation,
+        "category": row.category,
+        "online": row.online,
+    }
+
+
+def attempt_payload(row: TheoryAttempt, correct: int | None = None) -> dict:
+    correct_count = correct if correct is not None else sum(1 for item in row.detail or [] if item.get("correct"))
+    return {
+        "id": row.id,
+        "studentId": row.student_id,
+        "at": int(row.created_at.timestamp() * 1000) if row.created_at else now_ms(),
+        "total": row.total,
+        "correct": correct_count,
+        "score": row.score,
+        "details": row.detail or [],
+    }
 
 
 def question_path() -> Path:
-    return storage_path("theory_questions.json")
-
-
-def attempt_path() -> Path:
-    return storage_path("theory_attempts.json")
+    path = Path(get_settings().upload_dir).parent / "theory_questions.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def read_json(path: Path, fallback):
@@ -130,18 +217,6 @@ def read_json(path: Path, fallback):
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return fallback
-
-
-def write_json(path: Path, data) -> None:
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def read_questions() -> list[dict]:
-    return read_json(question_path(), DEFAULT_QUESTIONS)
-
-
-def read_attempts() -> list[dict]:
-    return read_json(attempt_path(), [])
 
 
 def public_question(row: dict) -> dict:
@@ -155,7 +230,6 @@ def normalize_question(row: dict) -> dict:
     return {
         "id": row.get("id") or uid("theory"),
         "stem": str(row.get("stem", "")).strip(),
-        "type": row.get("type") or "single",
         "options": options,
         "answer": str(row.get("answer", "")).strip(),
         "explanation": str(row.get("explanation", "")).strip(),

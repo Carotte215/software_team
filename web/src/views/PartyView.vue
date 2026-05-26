@@ -32,8 +32,14 @@ async function markDone(taskId) {
 }
 
 async function submitTheory() {
-  theoryResult.value = await api.submitTheoryAttempt(theoryAnswers.value);
-  toast(`理论自测得分 ${theoryResult.value.score}`);
+  const questionIds = theory.value.list.map((q) => q.id);
+  try {
+    theoryResult.value = await api.submitTheoryAttempt(theoryAnswers.value, questionIds);
+    toast(`理论自测得分 ${theoryResult.value.score}`);
+    await load();
+  } catch (error) {
+    toast(error?.message || "提交失败，可能已达今日答题上限");
+  }
 }
 </script>
 
@@ -94,6 +100,7 @@ async function submitTheory() {
       <div class="row between">
         <h3>理论自测</h3>
         <span v-if="theory.latestAttempt" class="tag gray">上次 {{ theory.latestAttempt.score }} 分</span>
+        <span v-if="theory.dailyLimit" class="tag gray">今日 {{ theory.todayAttempts || 0 }}/{{ theory.dailyLimit }} 次</span>
       </div>
       <form class="stack" @submit.prevent="submitTheory">
         <article v-for="question in theory.list" :key="question.id" class="card">

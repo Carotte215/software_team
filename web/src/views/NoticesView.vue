@@ -6,6 +6,7 @@ const api = inject("api");
 const toast = inject("toast");
 const notices = ref([]);
 const messages = ref([]);
+const expandedNotice = ref(null);
 
 onMounted(load);
 
@@ -23,6 +24,10 @@ async function markRead(id) {
   toast("已标记已读");
   await load();
 }
+
+function toggleNotice(item) {
+  expandedNotice.value = expandedNotice.value?.id === item.id ? null : item;
+}
 </script>
 
 <template>
@@ -38,7 +43,10 @@ async function markRead(id) {
           <p>{{ item.summary }}</p>
           <p>
             <span v-for="tag in item.tags" :key="tag" class="tag">{{ tag }}</span>
+            <span class="tag gray">{{ item.source }}</span>
           </p>
+          <button @click="toggleNotice(item)">{{ expandedNotice?.id === item.id ? "收起" : "全文" }}</button>
+          <p v-if="expandedNotice?.id === item.id" class="muted" style="white-space:pre-wrap">{{ item.content }}</p>
         </article>
       </div>
     </section>
@@ -52,7 +60,11 @@ async function markRead(id) {
             <span class="tag" :class="msg.readAt ? 'gray' : 'orange'">{{ msg.readAt ? "已读" : "未读" }}</span>
           </div>
           <p class="muted">{{ msg.summary }}</p>
-          <button @click="markRead(msg.id)">标记已读</button>
+          <p v-if="msg.channels?.length" class="muted">
+            渠道：
+            <span v-for="ch in msg.channels" :key="ch.name" class="tag gray">{{ ch.name }}: {{ ch.state || ch.detail }}</span>
+          </p>
+          <button @click="markRead(msg.id)" :disabled="Boolean(msg.readAt)">标记已读</button>
         </div>
       </div>
     </section>

@@ -10,15 +10,21 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
   await new Promise((resolve) => setTimeout(resolve, 60));
 
   if (parts[0] === "auth" && parts[1] === "login" && verb === "POST") return login(data);
-  if (parts[0] === "runtime") return { ok: true, appName: "学院学生综合服务与党团管理平台", env: "mock", authMode: "mock", tokenHours: 12 };
+  if (parts[0] === "auth" && parts[1] === "refresh" && verb === "POST") return refreshToken(session);
+  if (parts[0] === "auth" && parts[1] === "change-password" && verb === "POST") return changePassword(data, session);
+  if (parts[0] === "auth" && parts[1] === "reset-password" && verb === "POST") return resetPassword(data, session);
+  if (parts[0] === "runtime") return { ok: true, appName: "学院学生综合服务与党团管理平台", env: "mock", authMode: "mock", tokenHours: 12, databaseUp: true, schedulerEnabled: true };
   if (parts[0] === "session") return { studentId: session.studentId, role: session.role, authMode: "mock", hasToken: Boolean(session.token) };
+  if (parts[0] === "health") return { ok: true, database: "up", smtpConfigured: false };
 
+  if (parts[0] === "student" && parts[1] === "me" && verb === "PATCH") return updateMe(data, session);
   if (parts[0] === "student" && parts[1] === "me") return getMe(session);
   if (parts[0] === "students" && parts[1] === "import" && verb === "POST") return importStudents(data, session);
   if (parts[0] === "students" && parts[1] === "field-policy") return studentFieldPolicy(session);
   if (parts[0] === "students" && parts[1] && verb === "PATCH") return updateStudent(parts[1], data, session);
   if (parts[0] === "students") return { list: readDb().students.map((s) => publicStudent(s, ROLES.TEACHER)) };
 
+  if (parts[0] === "knowledge" && parts[1] === "export" && verb === "GET") return { ok: true, mock: true };
   if (parts[0] === "knowledge" && parts.length === 1 && verb === "GET") return knowledgeList(data);
   if (parts[0] === "knowledge" && parts.length === 1 && verb === "POST") return createKnowledge(data, session);
   if (parts[0] === "knowledge" && parts[1] === "admin" && parts[2] === "list") return knowledgeAdminList(session);
@@ -31,6 +37,8 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
 
   if (parts[0] === "party" && parts[1] === "progress") return partyProgress(session.studentId);
   if (parts[0] === "party" && parts[1] === "tasks" && parts[3] === "done" && verb === "POST") return completePartyTask(session.studentId, parts[2]);
+  if (parts[0] === "workbench" && parts[1] === "party" && parts[2] === "progress" && verb === "GET") return listPartyProgress(session);
+  if (parts[0] === "workbench" && parts[1] === "party" && parts[2] === "stages" && verb === "PUT") return updatePartyStages(data, session);
   if (parts[0] === "theory" && parts[1] === "questions" && verb === "GET") return theoryQuestions(session);
   if (parts[0] === "theory" && parts[1] === "attempt" && verb === "POST") return submitTheoryAttempt(data, session);
   if (parts[0] === "theory" && parts[1] === "workbench" && parts[2] === "questions" && parts.length === 3 && verb === "GET") return theoryQuestionAdmin(session);
@@ -42,6 +50,8 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
   if (parts[0] === "messages" && parts[1] === "inbox") return inbox(session.studentId);
   if (parts[0] === "messages" && parts[2] === "read" && verb === "POST") return markRead(session.studentId, parts[1]);
 
+  if (parts[0] === "applications" && parts[1] === "preview" && verb === "POST") return previewApplication(data, session);
+  if (parts[0] === "applications" && parts[2] === "document" && verb === "GET") return { ok: true, mock: true };
   if (parts[0] === "applications" && parts.length === 1 && verb === "GET") return applicationsList(data, session);
   if (parts[0] === "applications" && parts.length === 1 && verb === "POST") return createApplication(data, session);
   if (parts[0] === "applications" && parts[1] === "draft" && verb === "GET") return readDb().applicationDraftsByStudent?.[session.studentId] || null;
@@ -49,12 +59,15 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
   if (parts[0] === "applications" && parts[2] === "submit" && verb === "POST") return submitExistingApplication(parts[1], data, session);
   if (parts[0] === "applications" && parts[1]) return applicationDetail(parts[1], session);
 
+  if (parts[0] === "honors" && parts[2] === "online" && verb === "POST") return setHonorOnline(parts[1], data, session);
+  if (parts[0] === "honors" && parts[1] && verb === "DELETE") return deleteHonor(parts[1], session);
   if (parts[0] === "honors" && parts.length === 1 && verb === "GET") return honors(data, session);
   if (parts[0] === "honors" && parts.length === 1 && verb === "POST") return createHonor(data, session);
   if (parts[0] === "honors" && parts[1] && verb === "PUT") return updateHonor(parts[1], data, session);
   if (parts[0] === "academic" && parts[1] === "workbench" && parts[2] === "plans" && parts.length === 3 && verb === "GET") return listAcademicPlans(session);
   if (parts[0] === "academic" && parts[1] === "workbench" && parts[2] === "plans" && parts.length === 3 && verb === "PUT") return saveAcademicPlan(data, session);
   if (parts[0] === "academic" && parts[1] === "workbench" && parts[2] === "plans" && parts[3] === "import") return importAcademicPlans(data, session);
+  if (parts[0] === "academic" && parts[1] === "transcript" && parts[2] === "upload" && verb === "POST") return uploadTranscriptFile(data, session);
   if (parts[0] === "academic" && parts[1] === "report") return academicReport(session.studentId);
   if (parts[0] === "academic" && parts[1] === "plan") return academicPlan(session.studentId);
   if (parts[0] === "academic" && parts[1] === "progress" && verb === "PUT") return saveAcademicProgress(data, session);
@@ -63,7 +76,18 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
   if (parts[0] === "workbench" && parts[1] === "summary") return workbenchSummary(session);
   if (parts[0] === "workbench" && parts[1] === "knowledge" && parts[2] === "misses") return { list: readDb().missKeywords.sort((a, b) => b.count - a.count) };
   if (parts[0] === "workbench" && parts[1] === "academic" && parts[2] === "risks") return academicRisks(session);
+  if (parts[0] === "workbench" && parts[1] === "notices" && parts[2] === "import" && verb === "POST") return importNotice(data, session);
+  if (parts[0] === "workbench" && parts[1] === "notices" && parts[2] === "fetch-url" && verb === "POST") return fetchNoticeUrl(data, session);
   if (parts[0] === "workbench" && parts[1] === "notices" && parts[2] === "publish" && verb === "POST") return publishNotice(data, session);
+  if (parts[0] === "workbench" && parts[1] === "applications" && parts[2] === "export" && verb === "GET") return { ok: true, mock: true };
+  if (parts[0] === "workbench" && parts[1] === "templates" && parts.length === 2 && verb === "GET") return listWorkbenchTemplates(session);
+  if (parts[0] === "workbench" && parts[1] === "templates" && parts.length === 2 && verb === "POST") return saveWorkbenchTemplate(data, session);
+  if (parts[0] === "workbench" && parts[1] === "templates" && parts[2] && verb === "PUT") return saveWorkbenchTemplate({ ...data, id: parts[2] }, session);
+  if (parts[0] === "workbench" && parts[1] === "templates" && parts[2] && verb === "DELETE") return deleteWorkbenchTemplate(parts[2], session);
+  if (parts[0] === "workbench" && parts[1] === "application-templates" && parts.length === 2 && verb === "GET") return listApplicationTemplates(session);
+  if (parts[0] === "workbench" && parts[1] === "application-templates" && parts.length === 2 && verb === "POST") return saveApplicationTemplate(data, session);
+  if (parts[0] === "workbench" && parts[1] === "application-templates" && parts[2] && verb === "PUT") return saveApplicationTemplate({ ...data, id: parts[2] }, session);
+  if (parts[0] === "workbench" && parts[1] === "application-templates" && parts[2] && verb === "DELETE") return deleteApplicationTemplate(parts[2], session);
   if (parts[0] === "workbench" && parts[1] === "notices" && parts[2] === "scheduled" && parts[3] === "dispatch") return dispatchScheduledNotices(session);
   if (parts[0] === "workbench" && parts[1] === "batches") return { list: batchesWithReadStats(data) };
   if (parts[0] === "workbench" && parts[1] === "sms") return { list: readDb().smsSimulation };
@@ -74,17 +98,31 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
   if (parts[0] === "workbench" && parts[1] === "applications" && parts[2]) return decideApplication(parts[2], parts[3], data, session);
 
   if (parts[0] === "leader" && parts[1] === "dashboard") return leaderDashboard(session);
+  if (parts[0] === "audit" && parts[1] === "logs" && parts[2] === "export") return { ok: true, mock: true };
   if (parts[0] === "audit" && parts[1] === "logs") return { list: readDb().auditLogs.slice(0, data.limit || 200) };
   if (parts[0] === "danger" && parts[1] === "reset-db" && verb === "POST") return resetDb();
 
   throw new Error(`ROUTE_NOT_FOUND:${path}`);
 }
 
+function validMockPassword(studentId, password) {
+  if (!password) return true;
+  if (password === "demo123456") return true;
+  return password === `Stu@${String(studentId).slice(-6)}`;
+}
+
+function maskIdCard(idCard) {
+  const text = String(idCard || "").trim();
+  if (!text) return "";
+  if (text.length <= 8) return "*".repeat(text.length);
+  return `${text.slice(0, 3)}${"*".repeat(text.length - 7)}${text.slice(-4)}`;
+}
+
 function login(data) {
   const db = readDb();
   const student = db.students.find((s) => s.studentId === data.studentId);
   if (!student) throw new Error("UNKNOWN_IDENTITY");
-  if (data.password && data.password !== "demo123456") throw new Error("INVALID_CREDENTIAL");
+  if (!validMockPassword(student.studentId, data.password)) throw new Error("INVALID_CREDENTIAL");
   return {
     token: `mock-token-${student.studentId}-${Date.now()}`,
     studentId: student.studentId,
@@ -100,6 +138,39 @@ function getMe(session) {
   return student ? publicStudent(student, session.role) : null;
 }
 
+function updateMe(data, session) {
+  let row;
+  withDb((db) => {
+    row = db.students.find((s) => s.studentId === session.studentId);
+    if (!row) throw new Error("NOT_FOUND");
+    if (data.extension) row.extension = { ...(row.extension || {}), ...data.extension };
+    appendAudit(db, session, "student_self_update", row.studentId);
+  });
+  return publicStudent(row, session.role);
+}
+
+function refreshToken(session) {
+  return {
+    token: `mock-token-${session.studentId}-${Date.now()}`,
+    studentId: session.studentId,
+    role: session.role,
+    expiresInHours: 12,
+  };
+}
+
+function changePassword(data, session) {
+  if (!data.newPassword || String(data.newPassword).length < 6) throw new Error("PASSWORD_TOO_SHORT");
+  withDb((db) => appendAudit(db, session, "auth_change_password", session.studentId));
+  return { ok: true };
+}
+
+function resetPassword(data, session) {
+  requireTeacher(session);
+  if (!data.newPassword || String(data.newPassword).length < 6) throw new Error("PASSWORD_TOO_SHORT");
+  withDb((db) => appendAudit(db, session, "auth_reset_password", data.studentId));
+  return { ok: true, studentId: data.studentId };
+}
+
 function publicStudent(s, role) {
   const base = {
     studentId: s.studentId,
@@ -112,7 +183,15 @@ function publicStudent(s, role) {
     tutor: s.tutor,
     extension: s.extension,
   };
-  if (role === ROLES.TEACHER) return { ...base, phone: s.phone, phoneMasked: maskPhone(s.phone), hometown: s.hometown, idCardMasked: "**************" };
+  if (role === ROLES.TEACHER) {
+    return {
+      ...base,
+      phone: s.phone,
+      phoneMasked: maskPhone(s.phone),
+      hometown: s.hometown,
+      idCardMasked: s.idCardMasked || (s.idCard ? maskIdCard(s.idCard) : ""),
+    };
+  }
   if (role === ROLES.LEADER) return { ...base, phoneMasked: maskPhone(s.phone), hometown: s.hometown?.slice(0, 1) + "**" };
   return { ...base, phoneMasked: maskPhone(s.phone) };
 }
@@ -120,8 +199,8 @@ function publicStudent(s, role) {
 function studentFieldPolicy(session) {
   const policy = {
     teacher: {
-      visible: ["studentId", "name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "extension"],
-      editable: ["name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "extension"],
+      visible: ["studentId", "name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "idCardMasked", "extension"],
+      editable: ["name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "idCard", "extension"],
       exportable: ["studentId", "name", "grade", "major", "className", "nation", "phoneMasked", "politicalStatus", "tutor"],
     },
     coordinator: {
@@ -147,7 +226,14 @@ function updateStudent(studentId, data, session) {
       const current = db.students.find((student) => student.studentId === session.studentId);
       if (!current || current.className !== row.className) throw new Error("FORBIDDEN");
     }
-    Object.assign(row, data);
+    Object.entries(data || {}).forEach(([field, value]) => {
+      if (field === "idCard") {
+        row.idCard = String(value).trim();
+        row.idCardMasked = maskIdCard(row.idCard);
+        return;
+      }
+      row[field] = value;
+    });
     appendAudit(db, session, "student_update", studentId);
   });
   return publicStudent(row, session.role);
@@ -242,6 +328,14 @@ function requireTeacher(session) {
   if (session.role !== ROLES.TEACHER) throw new Error("FORBIDDEN");
 }
 
+function requireTeacherOrCoordinator(session) {
+  if (![ROLES.TEACHER, ROLES.COORDINATOR].includes(session.role)) throw new Error("FORBIDDEN");
+}
+
+function requireTeacherOrLeader(session) {
+  if (![ROLES.TEACHER, ROLES.LEADER].includes(session.role)) throw new Error("FORBIDDEN");
+}
+
 function knowledgePayload(data) {
   return {
     title: data.title,
@@ -261,7 +355,7 @@ function knowledgeAdminList(session) {
 }
 
 function createKnowledge(data, session) {
-  requireTeacher(session);
+  requireTeacherOrCoordinator(session);
   let row;
   withDb((db) => {
     row = {
@@ -278,7 +372,7 @@ function createKnowledge(data, session) {
 }
 
 function updateKnowledge(id, data, session) {
-  requireTeacher(session);
+  requireTeacherOrCoordinator(session);
   let row;
   withDb((db) => {
     row = db.knowledge.find((item) => item.id === id);
@@ -290,7 +384,7 @@ function updateKnowledge(id, data, session) {
 }
 
 function setKnowledgeOnline(id, data, session) {
-  requireTeacher(session);
+  requireTeacherOrCoordinator(session);
   let row;
   withDb((db) => {
     row = db.knowledge.find((item) => item.id === id);
@@ -380,14 +474,28 @@ function publicTheoryQuestion(item) {
 function theoryQuestions(session) {
   const bank = theoryBank();
   const attempts = bank.attempts.filter((item) => item.studentId === session.studentId);
-  return { list: bank.questions.filter((item) => item.online !== false).map(publicTheoryQuestion), latestAttempt: attempts[0] || null };
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayAttempts = attempts.filter((item) => item.at >= todayStart.getTime()).length;
+  return {
+    list: bank.questions.filter((item) => item.online !== false).map(publicTheoryQuestion),
+    latestAttempt: attempts[0] || null,
+    dailyLimit: 3,
+    todayAttempts,
+  };
 }
 
 function submitTheoryAttempt(data, session) {
+  const bank = theoryBank();
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayAttempts = bank.attempts.filter((item) => item.studentId === session.studentId && item.at >= todayStart.getTime()).length;
+  if (todayAttempts >= 3) throw new Error("DAILY_LIMIT");
   let result;
   withDb((db) => {
     const bank = theoryBank(db);
-    const questions = bank.questions.filter((item) => item.online !== false);
+    const questionIds = data.questionIds || Object.keys(data.answers || {});
+    const questions = bank.questions.filter((item) => questionIds.includes(item.id) && item.online !== false);
     let correct = 0;
     const details = questions.map((question) => {
       const answer = data.answers?.[question.id] || "";
@@ -669,6 +777,13 @@ function applicationDetail(id, session) {
 
 function honors(data, session) {
   let list = readDb().honors.slice();
+  const includeOffline = data.include_offline === true || data.include_offline === "true" || data.includeOffline === true;
+  if (includeOffline && ![ROLES.TEACHER, ROLES.LEADER].includes(session.role)) {
+    throw new Error("FORBIDDEN");
+  }
+  if (!includeOffline && ![ROLES.TEACHER, ROLES.LEADER].includes(session.role)) {
+    list = list.filter((h) => h.online !== false);
+  }
   if (data.year) list = list.filter((h) => String(h.year) === String(data.year));
   if (data.category) list = list.filter((h) => h.category === data.category);
   if (data.major) list = list.filter((h) => h.major.includes(data.major));
@@ -685,6 +800,7 @@ function honorPayload(data) {
     category: data.category || "",
     intro: data.intro || "",
     visibility: data.visibility || "public",
+    online: data.online !== false,
     attachments: (data.attachments || []).map((item) => ({ ...item, visibility: item.visibility || data.visibility || "public" })),
   };
 }
@@ -715,6 +831,29 @@ function updateHonor(id, data, session) {
     appendAudit(db, session, "honor_update", id);
   });
   return row;
+}
+
+function deleteHonor(id, session) {
+  requireTeacher(session);
+  withDb((db) => {
+    const index = db.honors.findIndex((item) => item.id === id);
+    if (index < 0) throw new Error("NOT_FOUND");
+    db.honors.splice(index, 1);
+    appendAudit(db, session, "honor_delete", id);
+  });
+  return { ok: true, id };
+}
+
+function setHonorOnline(id, data, session) {
+  requireTeacher(session);
+  let row;
+  withDb((db) => {
+    row = db.honors.find((item) => item.id === id);
+    if (!row) throw new Error("NOT_FOUND");
+    row.online = data.online !== false;
+    appendAudit(db, session, row.online ? "honor_online" : "honor_offline", id);
+  });
+  return filterHonorAttachments(row, session.role);
 }
 
 function academicPlan(studentId) {
@@ -825,6 +964,7 @@ function academicReport(studentId) {
     riskLevel: modules.some((m) => m.risk === "高") ? "高" : modules.some((m) => m.risk === "中") ? "中" : "低",
     suggestions: modules.filter((m) => m.gap > 0).map((m) => ({ focus: m.name, hint: `仍需约 ${m.gap} 学分，请关注 ${m.name} 相关课程。` })),
     uploads: progress.uploads || [],
+    courses: progress.courses || [],
   };
 }
 
@@ -865,6 +1005,183 @@ function saveTranscript(data, session) {
     progress.uploads = progress.uploads || [];
     progress.uploads.unshift({ ...data.meta, at: Date.now() });
     appendAudit(db, session, "academic_transcript_meta", session.studentId);
+  });
+  return { ok: true };
+}
+
+async function uploadTranscriptFile(data, session) {
+  const file = data instanceof FormData ? data.get("file") : null;
+  const confirm = data instanceof FormData ? data.get("confirm") === "true" : false;
+  const name = file?.name || "transcript.pdf";
+  const sampleCourses = [
+    { name: "高等数学A", category: "通识必修", moduleKey: "gen_req", credit: 4, score: "92" },
+    { name: "数据结构", category: "专业核心", moduleKey: "major_core", credit: 3, score: "88" },
+    { name: "软件工程实践", category: "实践", moduleKey: "practice", credit: 2, score: "优" },
+  ];
+  const suggestedModules = [
+    { key: "gen_req", earned: 4 },
+    { key: "major_core", earned: 3 },
+    { key: "practice", earned: 2 },
+  ];
+  let modules = [];
+  withDb((db) => {
+    const progress = db.academic.progressByStudent[session.studentId];
+    progress.uploads = [{ name, size: file?.size || 0, at: Date.now(), parseOk: true, parseMessage: "Mock 解析成功", courseCount: sampleCourses.length }, ...(progress.uploads || [])];
+    progress.courses = sampleCourses;
+    if (confirm) {
+      const merged = Object.fromEntries((progress.modules || []).map((item) => [item.key, item]));
+      suggestedModules.forEach((item) => {
+        merged[item.key] = { key: item.key, earned: item.earned };
+      });
+      progress.modules = Object.values(merged);
+    }
+    modules = progress.modules;
+    appendAudit(db, session, "academic_transcript_upload", session.studentId);
+  });
+  return {
+    ok: true,
+    upload: { name, parseOk: true, courseCount: sampleCourses.length },
+    message: "Mock 模式：已模拟解析 3 门课程",
+    courses: sampleCourses,
+    suggestedModules,
+    modules,
+    needsConfirm: !confirm,
+  };
+}
+
+function importNotice(data, session) {
+  if (![ROLES.TEACHER, ROLES.COORDINATOR].includes(session.role)) throw new Error("FORBIDDEN");
+  let row;
+  withDb((db) => {
+    row = {
+      id: uid("n"),
+      title: data.title,
+      tags: data.tags || [],
+      summary: data.summary || data.title,
+      content: data.content || data.summary || data.title,
+      source: data.source || "外部导入",
+      publishedAt: Date.now(),
+    };
+    db.notices.unshift(row);
+    appendAudit(db, session, "notice_import", row.id);
+  });
+  return row;
+}
+
+function fetchNoticeUrl(data, session) {
+  if (![ROLES.TEACHER, ROLES.COORDINATOR].includes(session.role)) throw new Error("FORBIDDEN");
+  let row;
+  withDb((db) => {
+    row = {
+      id: uid("n"),
+      title: `网页通知：${data.url || "未命名"}`,
+      tags: ["外部"],
+      summary: `来自 ${data.source || "网页抓取"} 的外部通知摘要`,
+      content: `抓取来源：${data.url}\n\nMock 模式下不发起真实网络请求，仅写入通知库占位正文。`,
+      source: data.source || "网页抓取",
+      publishedAt: Date.now(),
+    };
+    db.notices.unshift(row);
+    appendAudit(db, session, "notice_fetch_url", row.id);
+  });
+  return row;
+}
+
+function listPartyProgress(session) {
+  if (![ROLES.TEACHER, ROLES.LEADER].includes(session.role)) throw new Error("FORBIDDEN");
+  const db = readDb();
+  const list = Object.values(db.partyByStudent).map((row) => {
+    const student = db.students.find((s) => s.studentId === row.studentId);
+    const stage = FLOW_STAGES.find((item) => item.key === row.currentKey);
+    return {
+      ...row,
+      name: student?.name || "",
+      className: student?.className || "",
+      grade: student?.grade || "",
+      currentStageName: stage?.name || row.currentKey,
+    };
+  });
+  return { list, stages: FLOW_STAGES };
+}
+
+function updatePartyStages(data, session) {
+  requireTeacher(session);
+  withDb((db) => appendAudit(db, session, "party_stages_update", "party_stages"));
+  return { ok: true, stages: data.stages || FLOW_STAGES };
+}
+
+function previewApplication(data, session) {
+  const student = readDb().students.find((s) => s.studentId === session.studentId);
+  const html = `<!doctype html><html><body><h1>${data.type || "申请"}</h1><p>姓名：${student?.name || ""}</p><p>学号：${session.studentId}</p><p>事由：${data.form?.reason || ""}</p></body></html>`;
+  return { ok: true, html };
+}
+
+function listWorkbenchTemplates(session) {
+  requireTeacherOrCoordinator(session);
+  return { list: readDb().workbenchTemplates || readDb().templates || [] };
+}
+
+function saveWorkbenchTemplate(data, session) {
+  requireTeacherOrCoordinator(session);
+  let row;
+  withDb((db) => {
+    db.workbenchTemplates = db.workbenchTemplates || db.templates.slice();
+    if (data.id) {
+      row = db.workbenchTemplates.find((item) => item.id === data.id);
+      if (!row) throw new Error("NOT_FOUND");
+      Object.assign(row, data);
+    } else {
+      row = { id: uid("tpl"), ...data };
+      db.workbenchTemplates.unshift(row);
+    }
+    appendAudit(db, session, data.id ? "template_update" : "template_create", row.id);
+  });
+  return row;
+}
+
+function deleteWorkbenchTemplate(id, session) {
+  requireTeacher(session);
+  withDb((db) => {
+    db.workbenchTemplates = (db.workbenchTemplates || db.templates || []).filter((item) => item.id !== id);
+    appendAudit(db, session, "template_delete", id);
+  });
+  return { ok: true };
+}
+
+function listApplicationTemplates(session) {
+  requireTeacher(session);
+  return { list: readDb().applicationTemplates || [] };
+}
+
+function saveApplicationTemplate(data, session) {
+  requireTeacher(session);
+  let row;
+  withDb((db) => {
+    db.applicationTemplates = db.applicationTemplates || [];
+    const payload = {
+      name: data.name,
+      applyType: data.applyType,
+      subtype: data.subtype || "",
+      bodyHtml: data.bodyHtml || "",
+    };
+    if (data.id) {
+      row = db.applicationTemplates.find((item) => item.id === data.id);
+      if (!row) throw new Error("NOT_FOUND");
+      Object.assign(row, payload);
+    } else {
+      row = { id: uid("apptpl"), ...payload };
+      db.applicationTemplates.unshift(row);
+    }
+    appendAudit(db, session, data.id ? "application_template_update" : "application_template_create", row.id);
+  });
+  return row;
+}
+
+function deleteApplicationTemplate(id, session) {
+  requireTeacher(session);
+  withDb((db) => {
+    db.applicationTemplates = (db.applicationTemplates || []).filter((item) => item.id !== id);
+    appendAudit(db, session, "application_template_delete", id);
   });
   return { ok: true };
 }
@@ -954,12 +1271,20 @@ function deliverMockNotice(db, notice, batchId, targets) {
 function matchRule(rule, student, session) {
   if (session.role === ROLES.COORDINATOR) {
     const me = readDb().students.find((s) => s.studentId === session.studentId);
-    return me?.className === student.className;
+    if (me?.className !== student.className) return false;
   }
   if (!rule || rule.kind === "all") return true;
   if (rule.kind === "grade") return student.grade === rule.value;
   if (rule.kind === "major") return student.major.includes(rule.value || "");
   if (rule.kind === "class") return student.className === rule.value;
+  if (rule.kind === "political") return (rule.value || "") && String(student.politicalStatus || "").includes(rule.value);
+  if (rule.kind === "extension") {
+    const extKey = rule.extKey || "";
+    const extVal = rule.extValue ?? rule.value ?? "";
+    if (extKey && extVal !== "") {
+      return String((student.extension || {})[extKey] ?? "") === String(extVal);
+    }
+  }
   return true;
 }
 
@@ -1026,4 +1351,134 @@ function leaderDashboard(session) {
 function appendAudit(db, session, action, target) {
   db.auditLogs = db.auditLogs || [];
   db.auditLogs.unshift({ id: uid("log"), at: Date.now(), actorId: session?.studentId || "unknown", role: session?.role || "unknown", action, target, result: "ok" });
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+function csvBlob(rows, mime = "text/csv;charset=utf-8") {
+  const content = `\ufeff${rows.map((row) => row.map(csvEscape).join(",")).join("\n")}`;
+  return new Blob([content], { type: mime });
+}
+
+export function mockRequestBlob({ path, data = {}, session }) {
+  const parts = path.replace(/^\//, "").split("/").filter(Boolean);
+
+  if (parts[0] === "students" && parts[1] === "export") {
+    requireTeacher(session);
+    const rows = [["学号", "姓名", "年级", "专业", "班级", "民族", "手机号(脱敏)", "政治面貌", "导师"]];
+    readDb().students.forEach((student) => {
+      const item = publicStudent(student, ROLES.TEACHER);
+      rows.push([
+        item.studentId,
+        item.name,
+        item.grade,
+        item.major,
+        item.className,
+        item.nation,
+        maskPhone(student.phone),
+        item.politicalStatus,
+        item.tutor,
+      ]);
+    });
+    const mime = data.format === "xlsx"
+      ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      : "text/csv;charset=utf-8";
+    return csvBlob(rows, mime);
+  }
+
+  if (parts[0] === "knowledge" && parts[1] === "export") {
+    requireTeacher(session);
+    const rows = [["id", "标题", "分类", "标签", "摘要", "上线", "命中"]];
+    readDb().knowledge.forEach((item) => {
+      rows.push([
+        item.id,
+        item.title,
+        item.category,
+        (item.tags || []).join(","),
+        item.summary,
+        item.online === false ? "false" : "true",
+        item.hitCount || 0,
+      ]);
+    });
+    return csvBlob(rows);
+  }
+
+  if (parts[0] === "workbench" && parts[1] === "applications" && parts[2] === "export") {
+    const db = readDb();
+    const students = Object.fromEntries(db.students.map((row) => [row.studentId, row]));
+    const rows = [["申请ID", "学号", "姓名", "类型", "子类", "状态", "提交时间", "审批意见"]];
+    db.applications.forEach((item) => {
+      const student = students[item.studentId];
+      rows.push([
+        item.id,
+        item.studentId,
+        student?.name || "",
+        item.type,
+        item.subtype || "",
+        item.status,
+        item.submittedAt || item.createdAt || "",
+        item.teacherComment || "",
+      ]);
+    });
+    return csvBlob(rows);
+  }
+
+  if (parts[0] === "audit" && parts[1] === "logs" && parts[2] === "export") {
+    requireTeacherOrLeader(session);
+    const rows = [["时间", "操作人", "角色", "动作", "目标", "详情"]];
+    (readDb().auditLogs || []).slice(0, 5000).forEach((item) => {
+      rows.push([
+        item.at || "",
+        item.actorId || "",
+        item.role || "",
+        item.action || "",
+        item.target || "",
+        item.result || "",
+      ]);
+    });
+    return csvBlob(rows);
+  }
+
+  if (parts[0] === "applications" && parts[2] === "document") {
+    const app = readDb().applications.find((item) => item.id === parts[1]);
+    const student = readDb().students.find((item) => item.studentId === app?.studentId);
+    const title = app ? `${app.type}-${app.subtype || app.id}` : "application";
+    const body = [
+      "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>",
+      title,
+      "</title></head><body>",
+      `<h1>${app?.type || "申请"}</h1>`,
+      `<p>学号：${student?.studentId || ""}　姓名：${student?.name || ""}</p>`,
+      `<p>类型：${app?.type || ""} / ${app?.subtype || ""}</p>`,
+      `<p>说明：${app?.form?.reason || "未填写"}</p>`,
+      `<p>状态：${app?.status || ""}</p>`,
+      `<p>生成时间：${new Date().toLocaleString()}</p>`,
+      "</body></html>",
+    ].join("");
+    if (data.format === "html") {
+      return new Blob([body], { type: "text/html;charset=utf-8" });
+    }
+    if (data.format === "pdf") {
+      return new Blob([`Mock PDF\n${title}\n${student?.name || ""}\n`], { type: "application/pdf" });
+    }
+    return new Blob([body], { type: "application/msword" });
+  }
+
+  if (parts[0] === "files" && (parts[2] === "download" || parts[2] === "preview")) {
+    const label = data?.name || parts[1] || "file";
+    const content = `Mock 附件内容：${label}\n业务文件 ID：${parts[1]}\n`;
+    return new Blob([content], { type: "text/plain;charset=utf-8" });
+  }
+
+  if (parts[0] === "templates" && parts[2] === "download") {
+    const label = data?.name || parts[1] || "template";
+    return new Blob([`Mock 模板文件：${label}\n`], { type: "application/octet-stream" });
+  }
+
+  const label = data?.name || parts.filter(Boolean).pop() || "download";
+  return new Blob([`文件下载：${label}\n`], { type: "text/plain;charset=utf-8" });
 }

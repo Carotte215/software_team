@@ -1,109 +1,235 @@
-import json
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+
+from sqlalchemy import or_, select
+
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
+
+
 from app.db.session import get_db
+
 from app.deps import CurrentSession, get_current_session
+
 from app.models import Honor
-from app.schemas import HonorCreate
+
+from app.schemas import HonorCreate, HonorOnlinePut
+
 from app.services.common import audit, uid
-from app.services.permissions import TEACHER, require_roles
-from app.services.serializers import honor
+
+from app.services.permissions import COORDINATOR, LEADER, TEACHER, require_roles
+
+from app.services.serializers import honor_public
+
+
 
 router = APIRouter(prefix="/honors", tags=["honors"])
 
 
+
+
+
 @router.get("")
+
 def list_honors(
+
     year: str = "",
+
     major: str = "",
+
     category: str = "",
+
+    q: str = "",
+
+    include_offline: bool = False,
+
     db: Session = Depends(get_db),
+
     session: CurrentSession = Depends(get_current_session),
+
 ) -> dict:
+
     stmt = select(Honor)
+
+    if session.role in {"student", "coordinator"} and not include_offline:
+
+        stmt = stmt.where(Honor.online.is_(True))
+
+    elif include_offline and session.role not in {TEACHER, LEADER}:
+
+        raise HTTPException(status_code=403, detail="forbidden")
+
     if year:
+
         stmt = stmt.where(Honor.year == int(year))
+
     if major:
+
         stmt = stmt.where(Honor.major.ilike(f"%{major}%"))
+
     if category:
+
         stmt = stmt.where(Honor.category == category)
+
+    if q:
+
+        stmt = stmt.where(or_(Honor.title.ilike(f"%{q}%"), Honor.winner.ilike(f"%{q}%")))
+
     rows = db.scalars(stmt.order_by(Honor.year.desc())).all()
-    meta = read_honor_meta()
-    return {"list": [honor_with_meta(row, meta.get(row.id, {}), session.role) for row in rows]}
+
+    return {"list": [honor_public(row, session.role) for row in rows]}
+
+
+
 
 
 @router.post("")
+
 def create_honor(payload: HonorCreate, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+
     require_roles(session, TEACHER)
-    row = Honor(id=uid("honor"), **payload.model_dump(exclude={"attachments", "visibility"}))
+
+    row = Honor(
+
+        id=uid("honor"),
+
+        title=payload.title,
+
+        winner=payload.winner,
+
+        year=payload.year,
+
+        major=payload.major,
+
+        grade=payload.grade,
+
+        category=payload.category,
+
+        intro=payload.intro,
+
+        visibility=payload.visibility if payload.visibility in {"public", "restricted"} else "public",
+
+        online=payload.online is not False,
+
+        attachments=normalize_attachments(payload.attachments, payload.visibility),
+
+    )
+
     db.add(row)
-    save_honor_meta(row.id, payload)
+
     audit(db, session, "honor_create", row.id)
+
     db.commit()
-    return honor_with_meta(row, read_honor_meta().get(row.id, {}), session.role)
+
+    return honor_public(row, session.role)
+
+
+
 
 
 @router.put("/{honor_id}")
+
 def update_honor(honor_id: str, payload: HonorCreate, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+
     require_roles(session, TEACHER)
+
     row = db.get(Honor, honor_id)
+
     if not row:
+
         raise HTTPException(status_code=404, detail="honor not found")
-    for key, value in payload.model_dump(exclude={"attachments", "visibility"}).items():
-        setattr(row, key, value)
-    save_honor_meta(honor_id, payload)
+
+    row.title = payload.title
+
+    row.winner = payload.winner
+
+    row.year = payload.year
+
+    row.major = payload.major
+
+    row.grade = payload.grade
+
+    row.category = payload.category
+
+    row.intro = payload.intro
+
+    row.visibility = payload.visibility if payload.visibility in {"public", "restricted"} else "public"
+
+    row.online = payload.online is not False
+
+    row.attachments = normalize_attachments(payload.attachments, payload.visibility)
+
     audit(db, session, "honor_update", honor_id)
+
     db.commit()
-    return honor_with_meta(row, read_honor_meta().get(row.id, {}), session.role)
+
+    return honor_public(row, session.role)
 
 
-def honor_meta_path() -> Path:
-    path = Path(get_settings().upload_dir).parent / "honor_meta.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
 
 
-def read_honor_meta() -> dict:
-    path = honor_meta_path()
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
+
+@router.post("/{honor_id}/online")
+
+def set_honor_online(
+
+    honor_id: str,
+
+    payload: HonorOnlinePut,
+
+    db: Session = Depends(get_db),
+
+    session: CurrentSession = Depends(get_current_session),
+
+) -> dict:
+
+    require_roles(session, TEACHER)
+
+    row = db.get(Honor, honor_id)
+
+    if not row:
+
+        raise HTTPException(status_code=404, detail="honor not found")
+
+    row.online = payload.online
+
+    audit(db, session, "honor_online" if payload.online else "honor_offline", honor_id)
+
+    db.commit()
+
+    return honor_public(row, session.role)
 
 
-def write_honor_meta(data: dict) -> None:
-    honor_meta_path().write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def save_honor_meta(honor_id: str, payload: HonorCreate) -> None:
-    data = read_honor_meta()
-    data[honor_id] = {
-        "visibility": payload.visibility if payload.visibility in {"public", "restricted"} else "public",
-        "attachments": normalize_attachments(payload.attachments, payload.visibility),
-    }
-    write_honor_meta(data)
+
+@router.delete("/{honor_id}")
+
+def delete_honor(honor_id: str, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+
+    require_roles(session, TEACHER)
+
+    row = db.get(Honor, honor_id)
+
+    if not row:
+
+        raise HTTPException(status_code=404, detail="honor not found")
+
+    db.delete(row)
+
+    audit(db, session, "honor_delete", honor_id)
+
+    db.commit()
+
+    return {"ok": True, "id": honor_id}
+
+
+
 
 
 def normalize_attachments(attachments: list[dict], visibility: str) -> list[dict]:
+
     allowed = visibility if visibility in {"public", "restricted"} else "public"
-    result = []
-    for item in attachments or []:
-        result.append({**item, "visibility": item.get("visibility") or allowed})
-    return result
+
+    return [{**item, "visibility": item.get("visibility") or allowed} for item in attachments or []]
 
 
-def honor_with_meta(row: Honor, meta: dict, role: str) -> dict:
-    payload = honor(row)
-    visibility = meta.get("visibility", "public")
-    attachments = meta.get("attachments", [])
-    if role not in {"teacher", "leader"}:
-        attachments = [item for item in attachments if item.get("visibility") != "restricted"]
-    payload.update({"visibility": visibility, "attachments": attachments})
-    return payload

@@ -11,6 +11,8 @@ from app.db.session import get_db
 from app.deps import CurrentSession, get_current_session
 from app.models import Student
 from app.services.common import audit
+from app.services.crypto_fields import encrypt_text
+from app.services.passwords import default_initial_password, hash_password
 from app.services.permissions import COORDINATOR, LEADER, TEACHER, require_roles, scoped_student_ids
 from app.services.serializers import student_public
 
@@ -27,12 +29,14 @@ FIELD_ALIASES = {
     "politicalStatus": ["politicalStatus", "political_status", "政治面貌"],
     "tutor": ["tutor", "导师"],
     "hometown": ["hometown", "生源地", "户籍地"],
+    "initialPassword": ["initialPassword", "initial_password", "初始密码", "密码"],
+    "idCard": ["idCard", "id_card", "身份证号", "身份证"],
 }
 REQUIRED_FIELDS = ["studentId", "name", "grade", "major", "className"]
 FIELD_POLICY = {
     "teacher": {
-        "visible": ["studentId", "name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "extension"],
-        "editable": ["name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "extension"],
+        "visible": ["studentId", "name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "idCardMasked", "extension"],
+        "editable": ["name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "idCard", "extension"],
         "exportable": ["studentId", "name", "grade", "major", "className", "nation", "phoneMasked", "politicalStatus", "tutor"],
     },
     "coordinator": {
@@ -70,6 +74,23 @@ def me(db: Session = Depends(get_db), session: CurrentSession = Depends(get_curr
     if not student:
         raise HTTPException(status_code=404, detail="student not found")
     return student_public(student, session.role)
+
+
+@router.patch("/student/me")
+def update_me(payload: dict, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+    row = db.get(Student, session.student_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="student not found")
+    rejected = [field for field in payload.keys() if field != "extension"]
+    if rejected:
+        raise HTTPException(status_code=400, detail={"message": "field not editable", "fields": rejected})
+    if "extension" in payload:
+        if not isinstance(payload["extension"], dict):
+            raise HTTPException(status_code=400, detail="extension must be object")
+        row.extension = {**(row.extension or {}), **payload["extension"]}
+    audit(db, session, "student_self_update", row.student_id, {"fields": sorted(payload.keys())})
+    db.commit()
+    return student_public(row, session.role)
 
 
 @router.get("/students")
@@ -114,15 +135,51 @@ def update_student(
         if not isinstance(payload["extension"], dict):
             raise HTTPException(status_code=400, detail="extension must be object")
         row.extension = payload["extension"]
+    if "idCard" in payload and "idCard" in allowed:
+        row.id_card_encrypted = encrypt_text(str(payload["idCard"]).strip())
     audit(db, session, "student_update", student_id, {"fields": sorted(payload.keys())})
     db.commit()
     return student_public(row, session.role)
 
 
 @router.get("/students/export")
-def export_students(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> Response:
+def export_students(
+    format: str = "csv",
+    db: Session = Depends(get_db),
+    session: CurrentSession = Depends(get_current_session),
+) -> Response:
     require_roles(session, TEACHER)
     rows = db.scalars(select(Student).order_by(Student.grade.desc(), Student.student_id)).all()
+    if format == "xlsx":
+        from io import BytesIO
+
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "students"
+        ws.append(["学号", "姓名", "年级", "专业", "班级", "民族", "手机号(脱敏)", "政治面貌", "导师"])
+        for row in rows:
+            item = student_public(row, "leader")
+            ws.append([
+                item["studentId"],
+                item["name"],
+                item["grade"],
+                item["major"],
+                item["className"],
+                item["nation"],
+                item["phoneMasked"],
+                item["politicalStatus"],
+                item["tutor"],
+            ])
+        buf = BytesIO()
+        wb.save(buf)
+        filename = quote("学生画像导出.xlsx")
+        return Response(
+            buf.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+        )
     fp = StringIO()
     writer = csv.writer(fp)
     writer.writerow(["学号", "姓名", "年级", "专业", "班级", "民族", "手机号(脱敏)", "政治面貌", "导师"])
@@ -169,6 +226,7 @@ async def import_students(
             apply_student(existing, item)
             updated += 1
         else:
+            plain = item.get("initialPassword") or default_initial_password(item["studentId"])
             db.add(
                 Student(
                     student_id=item["studentId"],
@@ -181,6 +239,7 @@ async def import_students(
                     political_status=item.get("politicalStatus", ""),
                     tutor=item.get("tutor", ""),
                     hometown=item.get("hometown", ""),
+                    password_hash=hash_password(plain),
                     extension={},
                 ),
             )
@@ -266,3 +325,7 @@ def apply_student(row: Student, data: dict) -> None:
     row.political_status = data.get("politicalStatus", row.political_status)
     row.tutor = data.get("tutor", row.tutor)
     row.hometown = data.get("hometown", row.hometown)
+    if data.get("initialPassword"):
+        row.password_hash = hash_password(data["initialPassword"])
+    if data.get("idCard"):
+        row.id_card_encrypted = encrypt_text(data["idCard"])

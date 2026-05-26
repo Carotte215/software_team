@@ -1,9 +1,21 @@
-import { mockRequest } from "./mockGateway.js";
+import { mockRequest, mockRequestBlob } from "./mockGateway.js";
+
+const isProd = import.meta.env.PROD;
+const defaultBase = import.meta.env.VITE_API_BASE || (isProd ? "/api" : "http://127.0.0.1:8000/api");
+const defaultMode = isProd ? "remote" : localStorage.getItem("ss_web_api_mode") || "mock";
 
 const config = {
-  mode: localStorage.getItem("ss_web_api_mode") || "mock",
-  baseUrl: localStorage.getItem("ss_web_api_base_url") || "",
+  mode: defaultMode,
+  baseUrl: localStorage.getItem("ss_web_api_base_url") || defaultBase,
 };
+
+if (isProd && config.mode !== "remote") {
+  config.mode = "remote";
+  localStorage.setItem("ss_web_api_mode", "remote");
+}
+if (isProd && !localStorage.getItem("ss_web_api_base_url")) {
+  localStorage.setItem("ss_web_api_base_url", defaultBase);
+}
 
 export function configureApi(next) {
   Object.assign(config, next || {});
@@ -12,7 +24,7 @@ export function configureApi(next) {
 }
 
 export function getApiConfig() {
-  return { ...config };
+  return { ...config, isProd };
 }
 
 function isFormData(data) {
@@ -20,7 +32,8 @@ function isFormData(data) {
 }
 
 function buildUrl(path, data = {}) {
-  const url = new URL(`${config.baseUrl}${path.startsWith("/") ? path : `/${path}`}`, window.location.origin);
+  const base = config.baseUrl || "/api";
+  const url = new URL(`${base}${path.startsWith("/") ? path : `/${path}`}`, window.location.origin);
   Object.entries(data || {}).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, value);
   });
@@ -36,6 +49,11 @@ function authHeaders(session, includeJson = true) {
   };
 }
 
+function handleUnauthorized() {
+  if (config.mode !== "remote") return;
+  window.dispatchEvent(new CustomEvent("authrequired"));
+}
+
 export async function request({ path, method = "GET", data = {}, session }) {
   if (config.mode === "mock") {
     return mockRequest({ path, method, data, session });
@@ -48,19 +66,30 @@ export async function request({ path, method = "GET", data = {}, session }) {
     headers: authHeaders(session, !upload),
     body: verb === "GET" ? undefined : upload ? data : JSON.stringify(data),
   });
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new Error("HTTP 401");
+  }
+  if (res.status === 429) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || "请求过于频繁");
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 export async function requestBlob({ path, data = {}, session }) {
   if (config.mode === "mock") {
-    const label = data?.name || path.split("/").filter(Boolean).pop() || "download";
-    return new Blob([`文件下载：${label}\n`], { type: "text/plain;charset=utf-8" });
+    return mockRequestBlob({ path, data, session });
   }
   const res = await fetch(buildUrl(path, data).toString(), {
     method: "GET",
     headers: authHeaders(session, false),
   });
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new Error("HTTP 401");
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.blob();
 }

@@ -3,7 +3,7 @@ import { inject, onMounted, reactive, ref } from "vue";
 
 const api = inject("api");
 const toast = inject("toast");
-const filter = reactive({ major: "", category: "" });
+const filter = reactive({ major: "", category: "", year: "", q: "" });
 const honors = ref([]);
 
 onMounted(load);
@@ -32,6 +32,8 @@ async function downloadAttachment(file) {
 
 <template>
   <form class="toolbar" @submit.prevent="load">
+    <input v-model="filter.q" placeholder="荣誉名/获奖人" />
+    <input v-model="filter.year" type="number" placeholder="年份" min="2000" max="2100" />
     <input v-model="filter.major" placeholder="专业关键词" />
     <select v-model="filter.category">
       <option value="">全部类别</option>

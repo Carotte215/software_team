@@ -21,6 +21,7 @@ const honors = ref([]);
 const academicRisks = ref([]);
 const academicPlans = ref([]);
 const partyTimeline = ref(null);
+const partyProgressList = ref([]);
 const fieldPolicy = ref(null);
 const studentImportFile = ref(null);
 const studentImportOverwrite = ref(false);
@@ -30,10 +31,17 @@ const academicPlanImportResult = ref(null);
 const theoryQuestions = ref([]);
 const theoryImportFile = ref(null);
 const theoryImportResult = ref(null);
+const workbenchTemplates = ref([]);
+const appTemplates = ref([]);
+const templateFile = ref(null);
+const noticeImportForm = reactive({ title: "", summary: "", content: "", tags: "通知", source: "外部导入" });
+const noticeUrlForm = reactive({ url: "", source: "网页抓取" });
+const templateForm = reactive({ id: "", name: "", scene: "", format: "docx", fileId: "" });
+const appTemplateForm = reactive({ id: "", name: "", applyType: "证明申请", subtype: "", bodyHtml: "" });
 const academicPlanForm = reactive({
   grade: "",
   major: "",
-  modulesText: "[]",
+  modules: [],
 });
 const studentForm = reactive({
   studentId: "",
@@ -46,6 +54,8 @@ const studentForm = reactive({
   politicalStatus: "",
   tutor: "",
   hometown: "",
+  idCardMasked: "",
+  idCard: "",
   extensionText: "{}",
 });
 const noticeForm = reactive({
@@ -55,6 +65,8 @@ const noticeForm = reactive({
   tags: "通知,党团",
   kind: "all",
   value: "",
+  extKey: "",
+  extValue: "",
   scheduledAt: "",
 });
 const batchFilter = reactive({
@@ -69,6 +81,7 @@ const knowledgeForm = reactive({
   tags: "",
   summary: "",
   body: "",
+  officialLink: "",
   sensitiveHint: false,
   online: true,
   attachments: [],
@@ -112,11 +125,16 @@ async function load() {
   knowledgeItems.value = (await api.listKnowledgeAdmin().catch(() => ({ list: [] }))).list || [];
   students.value = (await api.listStudents().catch(() => ({ list: [] }))).list || [];
   fieldPolicy.value = await api.getStudentFieldPolicy().catch(() => null);
-  honors.value = (await api.listHonors().catch(() => ({ list: [] }))).list || [];
+  honors.value = (await api.listHonors(
+    session.value.role === ROLES.TEACHER ? { include_offline: true } : {},
+  ).catch(() => ({ list: [] }))).list || [];
   academicRisks.value = (await api.listAcademicRisks().catch(() => ({ list: [] }))).list || [];
   academicPlans.value = (await api.listAcademicPlans().catch(() => ({ list: [] }))).list || [];
   theoryQuestions.value = (await api.listTheoryQuestionAdmin().catch(() => ({ list: [] }))).list || [];
   partyTimeline.value = await api.getPartyTimeline().catch(() => null);
+  partyProgressList.value = (await api.listPartyProgress().catch(() => ({ list: [] }))).list || [];
+  workbenchTemplates.value = (await api.listWorkbenchTemplates().catch(() => ({ list: [] }))).list || [];
+  appTemplates.value = (await api.listApplicationTemplates().catch(() => ({ list: [] }))).list || [];
   if (!partyForm.studentId && students.value.length) partyForm.studentId = students.value[0].studentId;
   logs.value = (await api.listAuditLogs({ limit: 20 }).catch(() => ({ list: [] }))).list || [];
   leader.value = session.value.role === ROLES.LEADER
@@ -124,18 +142,133 @@ async function load() {
     : null;
 }
 
+async function importExternalNotice() {
+  if (!noticeImportForm.title.trim()) {
+    toast("请填写通知标题");
+    return;
+  }
+  await api.importNotice({
+    title: noticeImportForm.title,
+    summary: noticeImportForm.summary,
+    content: noticeImportForm.content,
+    tags: noticeImportForm.tags.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
+    source: noticeImportForm.source,
+  });
+  toast("外部通知已录入");
+  Object.assign(noticeImportForm, { title: "", summary: "", content: "", tags: "通知", source: "外部导入" });
+  await load();
+}
+
+async function fetchNoticeFromUrl() {
+  if (!noticeUrlForm.url.trim()) {
+    toast("请填写 URL");
+    return;
+  }
+  await api.fetchNoticeUrl({ url: noticeUrlForm.url, source: noticeUrlForm.source });
+  toast("网页通知已抓取并入库");
+  Object.assign(noticeUrlForm, { url: "", source: "网页抓取" });
+  await load();
+}
+
+async function saveWorkbenchTemplate() {
+  if (!templateForm.name.trim()) {
+    toast("请填写模板名称");
+    return;
+  }
+  let fileId = templateForm.fileId;
+  if (templateFile.value) {
+    const uploaded = await api.uploadFile(templateFile.value, "template");
+    fileId = uploaded.id;
+  }
+  const payload = {
+    name: templateForm.name,
+    scene: templateForm.scene,
+    format: templateForm.format,
+    fileId,
+  };
+  if (templateForm.id) {
+    await api.updateWorkbenchTemplate(templateForm.id, payload);
+    toast("模板已更新");
+  } else {
+    await api.createWorkbenchTemplate(payload);
+    toast("模板已创建");
+  }
+  Object.assign(templateForm, { id: "", name: "", scene: "", format: "docx", fileId: "" });
+  templateFile.value = null;
+  await load();
+}
+
+async function editWorkbenchTemplate(item) {
+  Object.assign(templateForm, {
+    id: item.id,
+    name: item.name,
+    scene: item.scene || "",
+    format: item.format || "docx",
+    fileId: item.fileId || "",
+  });
+}
+
+async function deleteWorkbenchTemplate(id) {
+  if (!window.confirm("确认删除该模板？")) return;
+  await api.deleteWorkbenchTemplate(id);
+  toast("模板已删除");
+  await load();
+}
+
+function editAppTemplate(item) {
+  Object.assign(appTemplateForm, {
+    id: item.id,
+    name: item.name,
+    applyType: item.applyType || "",
+    subtype: item.subtype || "",
+    bodyHtml: item.bodyHtml || "",
+  });
+}
+
+async function saveAppTemplate() {
+  if (!appTemplateForm.name.trim()) {
+    toast("请填写模板名称");
+    return;
+  }
+  const payload = { ...appTemplateForm };
+  if (appTemplateForm.id) {
+    await api.updateApplicationTemplate(appTemplateForm.id, payload);
+    toast("申请模板已更新");
+  } else {
+    await api.createApplicationTemplate(payload);
+    toast("申请模板已创建");
+  }
+  Object.assign(appTemplateForm, { id: "", name: "", applyType: "证明申请", subtype: "", bodyHtml: "" });
+  await load();
+}
+
+async function deleteAppTemplate(id) {
+  if (!window.confirm("确认删除该申请模板？")) return;
+  await api.deleteApplicationTemplate(id);
+  toast("申请模板已删除");
+  await load();
+}
+
 async function publishNotice() {
   const tags = noticeForm.tags.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+  const targetRule = { kind: noticeForm.kind, value: noticeForm.value };
+  if (noticeForm.kind === "extension") {
+    targetRule.extKey = noticeForm.extKey;
+    targetRule.extValue = noticeForm.extValue;
+  }
   const result = await api.publishNotice({
     title: noticeForm.title,
     summary: noticeForm.summary,
     content: noticeForm.content,
     tags,
-    targetRule: { kind: noticeForm.kind, value: noticeForm.value },
+    targetRule,
     scheduledAt: noticeForm.scheduledAt ? new Date(noticeForm.scheduledAt).getTime() : 0,
   });
   toast(result.scheduled ? "已生成定时通知批次" : "已生成通知批次");
-  Object.assign(noticeForm, { title: "", summary: "", content: "", tags: "通知,党团", kind: "all", value: "", scheduledAt: "" });
+  Object.assign(noticeForm, {
+    title: "", summary: "", content: "", tags: "通知,党团", kind: "all", value: "",
+    extKey: "", extValue: "", scheduledAt: "",
+  });
   await load();
 }
 
@@ -158,6 +291,9 @@ async function dispatchScheduled() {
 }
 
 async function decide(id, action) {
+  if (["revoke", "reapprove"].includes(action) && !window.confirm("确认执行该高风险审批操作？将写入审计日志。")) {
+    return;
+  }
   const message = action === "reject" ? "驳回原因" : "审批意见";
   const text = window.prompt(message, action === "reject" ? "材料不全，请补充后重提。" : "同意。") || "";
   const payload = action === "reject" ? { reason: text } : { comment: text };
@@ -189,6 +325,7 @@ function resetKnowledgeForm() {
     tags: "",
     summary: "",
     body: "",
+    officialLink: "",
     sensitiveHint: false,
     online: true,
     attachments: [],
@@ -203,6 +340,7 @@ function editKnowledge(item) {
     tags: (item.tags || []).join(","),
     summary: item.summary,
     body: item.body || "",
+    officialLink: item.officialLink || "",
     sensitiveHint: Boolean(item.sensitiveHint),
     online: item.online !== false,
     attachments: item.attachments || [],
@@ -242,6 +380,7 @@ function knowledgePayload() {
     tags: knowledgeForm.tags.split(/[,，]/).map((item) => item.trim()).filter(Boolean),
     summary: knowledgeForm.summary,
     body: knowledgeForm.body,
+    officialLink: knowledgeForm.officialLink,
     sensitiveHint: knowledgeForm.sensitiveHint,
     attachments: knowledgeForm.attachments,
     online: knowledgeForm.online,
@@ -292,6 +431,8 @@ async function advanceParty() {
 }
 
 function stageName(key) {
+  const fromApi = partyTimeline.value?.stages?.find((stage) => stage.key === key);
+  if (fromApi) return fromApi.name;
   return FLOW_STAGES.find((stage) => stage.key === key)?.name || key;
 }
 
@@ -310,10 +451,63 @@ async function refreshPartyReminders() {
   await load();
 }
 
-async function exportStudents() {
-  const blob = await api.exportStudents();
-  saveBlob(blob, "学生画像导出.csv");
+async function exportStudents(format = "csv") {
+  const blob = await api.exportStudents(format);
+  saveBlob(blob, format === "xlsx" ? "学生画像导出.xlsx" : "学生画像导出.csv");
   toast("学生画像导出已开始");
+}
+
+async function exportKnowledgeCsv() {
+  const blob = await api.exportKnowledge();
+  saveBlob(blob, "知识库导出.csv");
+  toast("知识库导出已开始");
+}
+
+async function exportApplicationsCsv() {
+  const blob = await api.exportApplications();
+  saveBlob(blob, "申请记录导出.csv");
+  toast("申请记录导出已开始");
+}
+
+async function exportAuditLogsCsv() {
+  const blob = await api.exportAuditLogs();
+  saveBlob(blob, "审计日志导出.csv");
+  toast("审计日志导出已开始");
+}
+
+async function savePartyStages() {
+  if (!partyTimeline.value?.stages?.length) {
+    toast("暂无阶段配置");
+    return;
+  }
+  await api.updatePartyStages(partyTimeline.value.stages);
+  toast("党团阶段名称与说明已保存");
+  await load();
+}
+
+async function deleteHonor(id) {
+  if (!window.confirm("确认删除该荣誉条目？")) return;
+  await api.deleteHonor(id);
+  toast("荣誉条目已删除");
+  await load();
+}
+
+async function toggleHonorOnline(item) {
+  await api.setHonorOnline(item.id, !item.online);
+  toast(item.online ? "荣誉已下线" : "荣誉已上线");
+  await load();
+}
+
+async function resetStudentPassword() {
+  const studentId = window.prompt("输入要重置密码的学号");
+  if (!studentId) return;
+  const newPassword = window.prompt("输入新密码（至少 6 位）");
+  if (!newPassword || newPassword.length < 6) {
+    toast("密码过短");
+    return;
+  }
+  await api.resetPassword({ studentId, newPassword });
+  toast("密码已重置");
 }
 
 function canEditStudentField(field) {
@@ -332,6 +526,8 @@ function editStudent(item) {
     politicalStatus: item.politicalStatus || "",
     tutor: item.tutor || "",
     hometown: item.hometown || "",
+    idCardMasked: item.idCardMasked || "",
+    idCard: "",
     extensionText: JSON.stringify(item.extension || {}, null, 2),
   });
 }
@@ -353,6 +549,7 @@ async function saveStudentProfile() {
     if (canEditStudentField(field)) payload[field] = studentForm[field];
   });
   if (canEditStudentField("extension")) payload.extension = extension;
+  if (canEditStudentField("idCard") && studentForm.idCard.trim()) payload.idCard = studentForm.idCard.trim();
   await api.updateStudent(studentForm.studentId, payload);
   toast("学生画像已更新");
   await load();
@@ -378,6 +575,9 @@ async function previewStudentImport() {
 async function commitStudentImport() {
   if (!studentImportFile.value) {
     toast("请选择 CSV 或 XLSX 文件");
+    return;
+  }
+  if (!window.confirm("确认写入学生数据？覆盖模式下将更新已有学号。")) {
     return;
   }
   studentImportResult.value = await api.importStudents(studentImportFile.value, {
@@ -430,20 +630,32 @@ function editAcademicPlan(item) {
   Object.assign(academicPlanForm, {
     grade: item.grade || "",
     major: item.major || "",
-    modulesText: JSON.stringify(item.modules || [], null, 2),
+    modules: (item.modules || []).map((row) => ({
+      key: row.key || "",
+      name: row.name || "",
+      required: Number(row.required || 0),
+    })),
   });
 }
 
+function addAcademicModule() {
+  academicPlanForm.modules.push({ key: "", name: "", required: 0 });
+}
+
+function removeAcademicModule(index) {
+  academicPlanForm.modules.splice(index, 1);
+}
+
 async function saveAcademicPlan() {
-  let modules = [];
-  try {
-    modules = JSON.parse(academicPlanForm.modulesText || "[]");
-  } catch (error) {
-    toast("培养方案模块必须是 JSON 数组");
-    return;
-  }
+  const modules = academicPlanForm.modules
+    .map((row) => ({
+      key: String(row.key || "").trim(),
+      name: String(row.name || "").trim(),
+      required: Number(row.required || 0),
+    }))
+    .filter((row) => row.key && row.name);
   if (!academicPlanForm.grade.trim() || !academicPlanForm.major.trim() || !modules.length) {
-    toast("请填写年级、专业和模块列表");
+    toast("请填写年级、专业和至少一个模块");
     return;
   }
   await api.saveAcademicPlan({ grade: academicPlanForm.grade, major: academicPlanForm.major, modules });
@@ -587,7 +799,11 @@ async function saveHonor() {
 
     <div class="grid cols-2">
       <section>
-        <div class="section-title">审批处理</div>
+        <div class="row between">
+          <div class="section-title">审批处理</div>
+          <button v-if="session.role === ROLES.TEACHER" type="button" @click="exportApplicationsCsv">导出 CSV</button>
+        </div>
+        <p v-if="session.role === ROLES.COORDINATOR" class="muted">协同管理者仅可查看申请，审批需管理老师操作。</p>
         <div class="stack">
           <article v-for="item in applications" :key="item.id" class="card">
             <div class="row between">
@@ -622,13 +838,34 @@ async function saveHonor() {
             <option value="all">全体</option>
             <option value="grade">按年级</option>
             <option value="major">按专业</option>
+            <option value="class">按班级</option>
+            <option value="political">按政治面貌</option>
+            <option value="extension">按扩展字段</option>
           </select>
-          <input v-model="noticeForm.value" placeholder="规则值，如 2024级 / 软件工程" />
+          <input v-if="noticeForm.kind !== 'extension'" v-model="noticeForm.value" placeholder="规则值，如 2024级 / 软件工程 / 共青团员" />
+          <template v-if="noticeForm.kind === 'extension'">
+            <input v-model="noticeForm.extKey" placeholder="扩展字段名，如 volunteerHours" />
+            <input v-model="noticeForm.extValue" placeholder="扩展字段值，如 32" />
+          </template>
           <label>
             定时发送
             <input v-model="noticeForm.scheduledAt" type="datetime-local" />
           </label>
           <button class="primary" :disabled="session.role === ROLES.LEADER">发布</button>
+        </form>
+        <h4 style="margin-top:16px">录入外部通知</h4>
+        <form class="stack" @submit.prevent="importExternalNotice">
+          <input v-model="noticeImportForm.title" placeholder="标题" required />
+          <input v-model="noticeImportForm.summary" placeholder="摘要" />
+          <textarea v-model="noticeImportForm.content" placeholder="正文"></textarea>
+          <input v-model="noticeImportForm.source" placeholder="来源" />
+          <button type="submit" :disabled="session.role === ROLES.LEADER">录入通知库</button>
+        </form>
+        <h4 style="margin-top:16px">从 URL 抓取通知</h4>
+        <form class="stack" @submit.prevent="fetchNoticeFromUrl">
+          <input v-model="noticeUrlForm.url" placeholder="https://..." required />
+          <input v-model="noticeUrlForm.source" placeholder="来源说明" />
+          <button type="submit" :disabled="session.role === ROLES.LEADER">抓取并入库</button>
         </form>
       </section>
     </div>
@@ -647,7 +884,7 @@ async function saveHonor() {
         <label>
           目标阶段
           <select v-model="partyForm.nextKey">
-            <option v-for="stage in FLOW_STAGES" :key="stage.key" :value="stage.key">{{ stage.name }}</option>
+            <option v-for="stage in (partyTimeline?.stages || FLOW_STAGES)" :key="stage.key" :value="stage.key">{{ stage.name }}</option>
           </select>
         </label>
         <label class="span-2">
@@ -684,6 +921,48 @@ async function saveHonor() {
         </table>
       </div>
       <p class="muted">保存规则后点击刷新提醒，系统会按当前阶段为学生生成或更新待办任务。</p>
+    </section>
+
+    <section class="card" v-if="partyTimeline && session.role === ROLES.TEACHER">
+      <div class="row between">
+        <h3>党团阶段配置</h3>
+        <button class="primary" @click="savePartyStages">保存阶段</button>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th>键</th><th>名称</th><th>说明</th><th>排序</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="stage in partyTimeline.stages" :key="stage.key">
+              <td>{{ stage.key }}</td>
+              <td><input v-model="stage.name" /></td>
+              <td><input v-model="stage.desc" /></td>
+              <td><input v-model.number="stage.order" type="number" min="0" /></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" v-if="partyProgressList.length && [ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
+      <h3>党团进度一览</h3>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th>学号</th><th>姓名</th><th>班级</th><th>当前阶段</th><th>待办</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in partyProgressList.slice(0, 30)" :key="row.studentId">
+              <td>{{ row.studentId }}</td>
+              <td>{{ row.name }}</td>
+              <td>{{ row.className }}</td>
+              <td>{{ row.currentStageName || row.currentKey }}</td>
+              <td>{{ (row.tasks || []).filter((t) => !t.done).length }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section class="card" v-if="[ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
@@ -735,7 +1014,9 @@ async function saveHonor() {
     <section class="card" v-if="session.role === ROLES.TEACHER">
       <div class="row between">
         <h3>学生画像导出</h3>
-        <button class="primary" @click="exportStudents">导出 CSV</button>
+        <button class="primary" @click="exportStudents('csv')">导出 CSV</button>
+        <button @click="exportStudents('xlsx')">导出 Excel</button>
+        <button @click="resetStudentPassword">重置学生密码</button>
       </div>
       <p class="muted">导出默认使用脱敏手机号；导入支持 CSV，后端也预留 XLSX 解析能力。</p>
       <div class="form-grid">
@@ -779,7 +1060,11 @@ async function saveHonor() {
       <div class="grid cols-2">
         <div class="stack">
           <article v-for="item in students.slice(0, 8)" :key="item.studentId" class="card row between">
-            <span>{{ item.name }} · {{ item.studentId }}<br /><span class="muted">{{ item.className }} · {{ item.politicalStatus }}</span></span>
+            <span>
+              {{ item.name }} · {{ item.studentId }}<br />
+              <span class="muted">{{ item.className }} · {{ item.politicalStatus }}</span>
+              <span v-if="item.idCardMasked" class="muted"><br />身份证 {{ item.idCardMasked }}</span>
+            </span>
             <button @click="editStudent(item)">编辑</button>
           </article>
         </div>
@@ -794,6 +1079,15 @@ async function saveHonor() {
           <input v-model="studentForm.politicalStatus" :disabled="!canEditStudentField('politicalStatus')" placeholder="政治面貌" />
           <input v-model="studentForm.tutor" :disabled="!canEditStudentField('tutor')" placeholder="导师" />
           <input v-model="studentForm.hometown" :disabled="!canEditStudentField('hometown')" placeholder="生源地/户籍地" />
+          <div class="span-2" v-if="canEditStudentField('idCard') || studentForm.idCardMasked">
+            <label>身份证号</label>
+            <p v-if="studentForm.idCardMasked" class="muted">当前脱敏：{{ studentForm.idCardMasked }}</p>
+            <input
+              v-model="studentForm.idCard"
+              :disabled="!canEditStudentField('idCard')"
+              placeholder="输入完整身份证号以更新（留空则不修改）"
+            />
+          </div>
           <textarea v-model="studentForm.extensionText" class="span-2" :disabled="!canEditStudentField('extension')" placeholder="扩展画像 JSON"></textarea>
           <button class="primary span-2">保存画像</button>
         </form>
@@ -838,7 +1132,22 @@ async function saveHonor() {
         <form class="form-grid" @submit.prevent="saveAcademicPlan">
           <input v-model="academicPlanForm.grade" :disabled="session.role !== ROLES.TEACHER" placeholder="年级，如 2024级" />
           <input v-model="academicPlanForm.major" :disabled="session.role !== ROLES.TEACHER" placeholder="专业，如 软件工程" />
-          <textarea v-model="academicPlanForm.modulesText" class="span-2" :disabled="session.role !== ROLES.TEACHER" placeholder='[{"key":"major_core","name":"专业核心","required":28}]'></textarea>
+          <div class="span-2 table-wrap" v-if="session.role === ROLES.TEACHER || academicPlanForm.modules.length">
+            <table class="table">
+              <thead>
+                <tr><th>模块 key</th><th>模块名称</th><th>要求学分</th><th v-if="session.role === ROLES.TEACHER">操作</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, index) in academicPlanForm.modules" :key="`${row.key}-${index}`">
+                  <td><input v-model="row.key" :disabled="session.role !== ROLES.TEACHER" placeholder="major_core" /></td>
+                  <td><input v-model="row.name" :disabled="session.role !== ROLES.TEACHER" placeholder="专业核心" /></td>
+                  <td><input v-model.number="row.required" type="number" min="0" :disabled="session.role !== ROLES.TEACHER" /></td>
+                  <td v-if="session.role === ROLES.TEACHER"><button type="button" @click="removeAcademicModule(index)">删除</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <button v-if="session.role === ROLES.TEACHER" type="button" @click="addAcademicModule">添加模块</button>
+          </div>
           <label class="span-2" v-if="session.role === ROLES.TEACHER">
             CSV 导入培养方案
             <input type="file" accept=".csv" @change="onAcademicPlanImportFile" />
@@ -893,10 +1202,15 @@ async function saveHonor() {
         <div class="stack">
           <article v-for="item in honors.slice(0, 5)" :key="item.id" class="card">
             <strong>{{ item.title }}</strong>
+            <span class="tag" :class="item.online === false ? 'gray' : 'green'">{{ item.online === false ? "已下线" : "展示中" }}</span>
             <p class="muted">{{ item.winner }} · {{ item.year }} · {{ item.category }}</p>
             <p>{{ item.intro }}</p>
             <p v-if="item.attachments?.length" class="muted">证明材料 {{ item.attachments.length }} 个 · {{ item.visibility === "restricted" ? "限管理端" : "公开" }}</p>
-            <button v-if="session.role === ROLES.TEACHER" @click="editHonor(item)">编辑</button>
+            <div class="row wrap" v-if="session.role === ROLES.TEACHER">
+              <button @click="editHonor(item)">编辑</button>
+              <button @click="toggleHonorOnline(item)">{{ item.online === false ? "上线" : "下线" }}</button>
+              <button @click="deleteHonor(item.id)">删除</button>
+            </div>
           </article>
           <div v-if="!honors.length" class="empty card">暂无荣誉条目</div>
         </div>
@@ -971,12 +1285,16 @@ async function saveHonor() {
     <div class="grid cols-2">
       <section class="card">
         <h3>知识库维护</h3>
+        <div class="row wrap" v-if="session.role === ROLES.TEACHER" style="margin-bottom:12px">
+          <button type="button" @click="exportKnowledgeCsv">导出知识库 CSV</button>
+        </div>
         <form class="stack" @submit.prevent="saveKnowledge">
           <input v-model="knowledgeForm.title" placeholder="标题" :disabled="session.role !== ROLES.TEACHER" />
           <input v-model="knowledgeForm.category" placeholder="分类" :disabled="session.role !== ROLES.TEACHER" />
           <input v-model="knowledgeForm.tags" placeholder="标签，逗号分隔" :disabled="session.role !== ROLES.TEACHER" />
           <textarea v-model="knowledgeForm.summary" placeholder="标准摘要" :disabled="session.role !== ROLES.TEACHER"></textarea>
-          <textarea v-model="knowledgeForm.body" placeholder="详细依据、办理步骤或官方链接" :disabled="session.role !== ROLES.TEACHER"></textarea>
+          <textarea v-model="knowledgeForm.body" placeholder="详细依据、办理步骤" :disabled="session.role !== ROLES.TEACHER && session.role !== ROLES.COORDINATOR"></textarea>
+          <input v-model="knowledgeForm.officialLink" placeholder="官方链接（可选）" :disabled="session.role !== ROLES.TEACHER && session.role !== ROLES.COORDINATOR" />
           <label>
             政策附件
             <input type="file" multiple :disabled="session.role !== ROLES.TEACHER" @change="onKnowledgeFiles" />
@@ -990,10 +1308,10 @@ async function saveHonor() {
             敏感内容仅展示摘要
           </label>
           <label class="row">
-            <input v-model="knowledgeForm.online" type="checkbox" :disabled="session.role !== ROLES.TEACHER" />
+            <input v-model="knowledgeForm.online" type="checkbox" :disabled="session.role !== ROLES.TEACHER && session.role !== ROLES.COORDINATOR" />
             上线展示
           </label>
-          <div class="row wrap" v-if="session.role === ROLES.TEACHER">
+          <div class="row wrap" v-if="session.role === ROLES.TEACHER || session.role === ROLES.COORDINATOR">
             <button class="primary">{{ knowledgeForm.id ? "保存修改" : "创建条目" }}</button>
             <button type="button" @click="resetKnowledgeForm">清空</button>
           </div>
@@ -1021,7 +1339,51 @@ async function saveHonor() {
       </section>
     </div>
 
-    <div class="section-title">审计日志</div>
+    <div class="grid cols-2" v-if="[ROLES.TEACHER, ROLES.COORDINATOR].includes(session.role)">
+      <section class="card">
+        <h3>常用模板维护</h3>
+        <form class="stack" @submit.prevent="saveWorkbenchTemplate">
+          <input v-model="templateForm.name" placeholder="模板名称" required />
+          <input v-model="templateForm.scene" placeholder="适用场景" />
+          <input v-model="templateForm.format" placeholder="格式 docx/xlsx" />
+          <input type="file" @change="(e) => (templateFile = e.target.files?.[0] || null)" />
+          <button class="primary">{{ templateForm.id ? "保存模板" : "新建模板" }}</button>
+        </form>
+        <div class="stack" style="margin-top:12px">
+          <div v-for="item in workbenchTemplates" :key="item.id" class="card row between">
+            <span>{{ item.name }} · {{ item.scene }}</span>
+            <div class="row">
+              <button @click="editWorkbenchTemplate(item)">编辑</button>
+              <button v-if="session.role === ROLES.TEACHER" @click="deleteWorkbenchTemplate(item.id)">删除</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="card">
+        <h3>证明/申请 HTML 模板</h3>
+        <form class="stack" @submit.prevent="saveAppTemplate">
+          <input v-model="appTemplateForm.name" placeholder="模板名称" required />
+          <input v-model="appTemplateForm.applyType" placeholder="申请类型" />
+          <input v-model="appTemplateForm.subtype" placeholder="子类（可选）" />
+          <textarea v-model="appTemplateForm.bodyHtml" placeholder="HTML，可用 {{name}} {{studentId}} {{reason}} 等占位符" rows="6"></textarea>
+          <button class="primary">{{ appTemplateForm.id ? "保存" : "创建" }}</button>
+        </form>
+        <div class="stack" style="margin-top:12px">
+          <div v-for="item in appTemplates" :key="item.id" class="card row between">
+            <span>{{ item.name }} · {{ item.applyType }}</span>
+            <div class="row">
+              <button @click="editAppTemplate(item)">编辑</button>
+              <button @click="deleteAppTemplate(item.id)">删除</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="row between">
+      <div class="section-title">审计日志</div>
+      <button v-if="session.role === ROLES.TEACHER" type="button" @click="exportAuditLogsCsv">导出 CSV</button>
+    </div>
     <div class="stack">
       <div v-for="item in logs" :key="item.id" class="card muted">
         {{ formatTime(item.at) }} · {{ item.role }} · {{ item.actorId }} · {{ item.action }} → {{ item.target }}

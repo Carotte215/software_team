@@ -4,9 +4,10 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.deps import CurrentSession, get_current_session
-from app.models import KnowledgeItem, TemplateFile
+from app.models import KnowledgeItem, KnowledgeMissKeyword, TemplateFile
 from app.schemas import KnowledgeCreate, KnowledgeOnlinePut, KnowledgeUpdate
 from app.services.common import audit, uid
+from app.services.permissions import COORDINATOR, TEACHER, require_roles
 from app.services.serializers import knowledge, template
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
@@ -23,16 +24,22 @@ def list_knowledge(
         stmt = stmt.where(KnowledgeItem.category == category)
     if q:
         like = f"%{q}%"
-        stmt = stmt.where(or_(KnowledgeItem.title.ilike(like), KnowledgeItem.summary.ilike(like), KnowledgeItem.body.ilike(like)))
-    rows = db.scalars(stmt.order_by(KnowledgeItem.updated_at.desc())).all()
+        stmt = stmt.where(
+            or_(
+                KnowledgeItem.title.ilike(like),
+                KnowledgeItem.summary.ilike(like),
+                KnowledgeItem.body.ilike(like),
+            ),
+        )
+    rows = db.scalars(stmt.order_by(KnowledgeItem.hit_count.desc(), KnowledgeItem.updated_at.desc())).all()
     categories = ["全部", *db.scalars(select(KnowledgeItem.category).distinct()).all()]
     templates = db.scalars(select(TemplateFile).order_by(TemplateFile.name)).all()
-    return {"list": [knowledge(row) for row in rows], "categories": categories, "templates": [template(row) for row in templates]}
+    return {"list": [knowledge(row, q=q) for row in rows], "categories": categories, "templates": [template(row) for row in templates]}
 
 
 @router.post("")
 def create_knowledge(payload: KnowledgeCreate, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
-    if session.role != "teacher":
+    if session.role not in {"teacher", "coordinator"}:
         raise HTTPException(status_code=403, detail="forbidden")
     row = KnowledgeItem(
         id=uid("k"),
@@ -41,6 +48,7 @@ def create_knowledge(payload: KnowledgeCreate, db: Session = Depends(get_db), se
         tags=payload.tags,
         summary=payload.summary,
         body=payload.body,
+        official_link=payload.official_link,
         sensitive_hint=payload.sensitive_hint,
         attachments=payload.attachments,
     )
@@ -52,10 +60,33 @@ def create_knowledge(payload: KnowledgeCreate, db: Session = Depends(get_db), se
 
 @router.get("/admin/list")
 def list_knowledge_admin(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
-    if session.role not in {"teacher", "leader"}:
+    if session.role not in {"teacher", "leader", "coordinator"}:
         raise HTTPException(status_code=403, detail="forbidden")
     rows = db.scalars(select(KnowledgeItem).order_by(KnowledgeItem.updated_at.desc())).all()
     return {"list": [knowledge(row) for row in rows]}
+
+
+@router.get("/export")
+def export_knowledge(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)):
+    import csv
+    from io import StringIO
+    from urllib.parse import quote
+
+    from fastapi.responses import Response
+
+    require_roles(session, TEACHER)
+    rows = db.scalars(select(KnowledgeItem).order_by(KnowledgeItem.category, KnowledgeItem.title)).all()
+    fp = StringIO()
+    writer = csv.writer(fp)
+    writer.writerow(["id", "标题", "分类", "标签", "摘要", "上线", "命中"])
+    for row in rows:
+        writer.writerow([row.id, row.title, row.category, ",".join(row.tags or []), row.summary, row.online, row.hit_count])
+    filename = quote("知识库导出.csv")
+    return Response(
+        "\ufeff" + fp.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
 
 
 @router.put("/{item_id}")
@@ -65,7 +96,7 @@ def update_knowledge(
     db: Session = Depends(get_db),
     session: CurrentSession = Depends(get_current_session),
 ) -> dict:
-    if session.role != "teacher":
+    if session.role not in {"teacher", "coordinator"}:
         raise HTTPException(status_code=403, detail="forbidden")
     row = db.get(KnowledgeItem, item_id)
     if not row:
@@ -75,6 +106,7 @@ def update_knowledge(
     row.tags = payload.tags
     row.summary = payload.summary
     row.body = payload.body
+    row.official_link = payload.official_link
     row.sensitive_hint = payload.sensitive_hint
     row.attachments = payload.attachments
     row.online = payload.online
@@ -90,7 +122,7 @@ def set_knowledge_online(
     db: Session = Depends(get_db),
     session: CurrentSession = Depends(get_current_session),
 ) -> dict:
-    if session.role != "teacher":
+    if session.role not in {"teacher", "coordinator"}:
         raise HTTPException(status_code=403, detail="forbidden")
     row = db.get(KnowledgeItem, item_id)
     if not row:
@@ -104,6 +136,14 @@ def set_knowledge_online(
 @router.post("/miss")
 def record_miss(payload: dict, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
     keyword = str(payload.get("keyword", "")).strip()
+    if not keyword:
+        raise HTTPException(status_code=400, detail="keyword required")
+    row = db.get(KnowledgeMissKeyword, keyword)
+    if row:
+        row.count += 1
+        row.last_student_id = session.student_id
+    else:
+        db.add(KnowledgeMissKeyword(keyword=keyword, count=1, last_student_id=session.student_id))
     audit(db, session, "knowledge_miss", keyword)
     db.commit()
     return {"ok": True}

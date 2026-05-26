@@ -1,0 +1,87 @@
+"""Lightweight schema patches for existing databases (no Alembic)."""
+
+from sqlalchemy import inspect, select, text
+from sqlalchemy.engine import Engine
+
+from app.models import Student
+from app.services.passwords import default_initial_password, hash_password
+
+
+def ensure_schema(engine: Engine) -> None:
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    with engine.begin() as conn:
+        if "students" in tables:
+            cols = {col["name"] for col in inspector.get_columns("students")}
+            for col, ddl in (
+                ("password_hash", "ALTER TABLE students ADD COLUMN password_hash VARCHAR(255) DEFAULT ''"),
+                ("id_card_encrypted", "ALTER TABLE students ADD COLUMN id_card_encrypted VARCHAR(512) DEFAULT ''"),
+                ("email", "ALTER TABLE students ADD COLUMN email VARCHAR(128) DEFAULT ''"),
+            ):
+                if col not in cols:
+                    conn.execute(text(ddl))
+
+        if "knowledge_items" in tables:
+            cols = {col["name"] for col in inspector.get_columns("knowledge_items")}
+            if "official_link" not in cols:
+                conn.execute(text("ALTER TABLE knowledge_items ADD COLUMN official_link VARCHAR(500) DEFAULT ''"))
+
+        if "honors" in tables:
+            cols = {col["name"] for col in inspector.get_columns("honors")}
+            if "visibility" not in cols:
+                conn.execute(text("ALTER TABLE honors ADD COLUMN visibility VARCHAR(32) DEFAULT 'public'"))
+            if "attachments" not in cols:
+                conn.execute(text("ALTER TABLE honors ADD COLUMN attachments JSONB DEFAULT '[]'"))
+            if "online" not in cols:
+                conn.execute(text("ALTER TABLE honors ADD COLUMN online BOOLEAN DEFAULT TRUE"))
+
+        if "academic_progress" in tables:
+            cols = {col["name"] for col in inspector.get_columns("academic_progress")}
+            if "courses" not in cols:
+                conn.execute(text("ALTER TABLE academic_progress ADD COLUMN courses JSONB DEFAULT '[]'"))
+
+        if "template_files" in tables:
+            cols = {col["name"] for col in inspector.get_columns("template_files")}
+            if "file_id" not in cols:
+                conn.execute(text("ALTER TABLE template_files ADD COLUMN file_id VARCHAR(64) DEFAULT ''"))
+
+        if "application_templates" in tables:
+            cols = {col["name"] for col in inspector.get_columns("application_templates")}
+            if "subtype" not in cols:
+                conn.execute(text("ALTER TABLE application_templates ADD COLUMN subtype VARCHAR(64) DEFAULT ''"))
+
+        for ddl in (
+            "CREATE TABLE IF NOT EXISTS party_timeline_rules (stage_key VARCHAR(64) PRIMARY KEY, duration_days INTEGER DEFAULT 0, remind_before_days INTEGER DEFAULT 0, material TEXT DEFAULT '', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS party_stages (stage_key VARCHAR(64) PRIMARY KEY, name VARCHAR(64) NOT NULL, description TEXT DEFAULT '', sort_order INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS theory_questions (id VARCHAR(64) PRIMARY KEY, stem TEXT NOT NULL, options JSONB DEFAULT '[]', answer VARCHAR(200) DEFAULT '', explanation TEXT DEFAULT '', category VARCHAR(64) DEFAULT '', online BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS theory_attempts (id VARCHAR(64) PRIMARY KEY, student_id VARCHAR(32), score INTEGER DEFAULT 0, total INTEGER DEFAULT 0, detail JSONB DEFAULT '[]', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS application_templates (id VARCHAR(64) PRIMARY KEY, name VARCHAR(120) NOT NULL, apply_type VARCHAR(64) DEFAULT '', subtype VARCHAR(64) DEFAULT '', body_html TEXT DEFAULT '', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS knowledge_miss_keywords (keyword VARCHAR(200) PRIMARY KEY, count INTEGER DEFAULT 1, last_student_id VARCHAR(32) DEFAULT '', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS sms_simulations (id VARCHAR(64) PRIMARY KEY, batch_id VARCHAR(64), student_id VARCHAR(32), phone_masked VARCHAR(32) DEFAULT '', text TEXT DEFAULT '', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+        ):
+            conn.execute(text(ddl))
+
+    backfill_password_hashes(engine)
+
+
+def backfill_password_hashes(engine: Engine) -> None:
+    from sqlalchemy.orm import Session
+
+    with Session(engine) as db:
+        rows = db.scalars(select(Student).where(Student.password_hash == "")).all()
+        if not rows:
+            return
+        for row in rows:
+            row.password_hash = hash_password(default_initial_password(row.student_id))
+        db.commit()
+
+
+def main() -> None:
+    from app.db.session import engine
+
+    ensure_schema(engine)
+    print("schema migration ok")
+
+
+if __name__ == "__main__":
+    main()

@@ -12,14 +12,26 @@ class Settings:
             "DATABASE_URL",
             "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/student_service",
         )
-        self.cors_origins = os.getenv("CORS_ORIGINS", "http://127.0.0.1:5177,http://localhost:5177")
-        self.auto_create_tables = os.getenv("AUTO_CREATE_TABLES", "false").lower() in {"1", "true", "yes"}
-        self.upload_dir = os.getenv("UPLOAD_DIR", str(Path(__file__).resolve().parents[2] / "storage" / "uploads"))
-        self.max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", str(30 * 1024 * 1024)))
-        self.auth_mode = os.getenv("AUTH_MODE", "header")
+        self.auth_mode = os.getenv("AUTH_MODE", "token")
         self.auth_secret = os.getenv("AUTH_SECRET", "dev-secret-change-me")
         self.auth_token_hours = int(os.getenv("AUTH_TOKEN_HOURS", "12"))
         self.auth_demo_password = os.getenv("AUTH_DEMO_PASSWORD", "demo123456")
+        self.cors_origins = os.getenv(
+            "CORS_ORIGINS",
+            "http://127.0.0.1:5177,http://localhost:5177,http://10.10.0.21",
+        )
+        self.auto_create_tables = os.getenv("AUTO_CREATE_TABLES", "false").lower() in {"1", "true", "yes"}
+        self.upload_dir = os.getenv("UPLOAD_DIR", str(Path(__file__).resolve().parents[2] / "storage" / "uploads"))
+        self.max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", str(30 * 1024 * 1024)))
+        self.enable_scheduler = os.getenv("ENABLE_SCHEDULER", "true").lower() in {"1", "true", "yes"}
+        self.smtp_host = os.getenv("SMTP_HOST", "")
+        self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        self.smtp_user = os.getenv("SMTP_USER", "")
+        self.smtp_password = os.getenv("SMTP_PASSWORD", "")
+        self.smtp_from = os.getenv("SMTP_FROM", "")
+        self.smtp_tls = os.getenv("SMTP_TLS", "true").lower() in {"1", "true", "yes"}
+        self.theory_question_count = int(os.getenv("THEORY_QUESTION_COUNT", "5"))
+        self.theory_daily_attempt_limit = int(os.getenv("THEORY_DAILY_ATTEMPT_LIMIT", "3"))
 
     @property
     def cors_origin_list(self) -> list[str]:

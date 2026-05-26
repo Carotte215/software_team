@@ -1,7 +1,8 @@
 <script setup>
-import { computed, provide, ref, watchEffect } from "vue";
+import { computed, onMounted, provide, ref, watchEffect } from "vue";
 import { ROLE_LABEL } from "./data/seed.js";
 import { readDb } from "./api/store.js";
+import { configureApi, getApiConfig } from "./api/client.js";
 import { getSession, setSession } from "./state/session.js";
 import { createApi } from "./services/api.js";
 import { canAccessRoute, go, mobileRouteIds, readRoute, routes, visibleRoutes as getVisibleRoutes } from "./state/routes.js";
@@ -23,7 +24,8 @@ const loginBusy = ref(false);
 const loginForm = ref({ studentId: session.value.studentId, role: session.value.role, password: "" });
 
 const api = createApi(session);
-const apiConfig = ref(api.getApiConfig());
+const apiConfig = ref(getApiConfig());
+const isProd = import.meta.env.PROD;
 
 provide("api", api);
 provide("session", session);
@@ -57,6 +59,18 @@ window.addEventListener("hashchange", () => {
 window.addEventListener("sessionchange", () => {
   db.value = readDb();
   session.value = getSession(db.value);
+});
+
+window.addEventListener("authrequired", () => {
+  setSession({ ...session.value, token: "" });
+  showToast("登录已过期，请重新登录");
+});
+
+onMounted(() => {
+  if (isProd) {
+    configureApi({ mode: "remote", baseUrl: import.meta.env.VITE_API_BASE || "/api" });
+    apiConfig.value = getApiConfig();
+  }
 });
 
 watchEffect(() => {
@@ -150,8 +164,8 @@ function reloadShell() {
           <span class="tag" :class="apiConfig.mode === 'remote' ? 'green' : 'gray'">
             数据源 {{ apiModeLabel }}
           </span>
-          <button v-if="apiConfig.mode !== 'remote'" @click="switchApiMode('remote')">连接服务</button>
-          <button v-else @click="switchApiMode('mock')">离线模式</button>
+          <button v-if="!isProd && apiConfig.mode !== 'remote'" @click="switchApiMode('remote')">连接服务</button>
+          <button v-if="!isProd && apiConfig.mode === 'remote'" @click="switchApiMode('mock')">离线模式</button>
           <template v-if="apiConfig.mode === 'remote'">
             <select v-model="loginForm.role" :disabled="Boolean(session.token)">
               <option v-for="(label, id) in ROLE_LABEL" :key="id" :value="id">{{ label }}</option>
@@ -161,7 +175,7 @@ function reloadShell() {
                 {{ student.name }} {{ student.studentId }}
               </option>
             </select>
-            <input v-if="!session.token" v-model="loginForm.password" type="password" placeholder="请输入登录口令" />
+            <input v-if="!session.token" v-model="loginForm.password" type="password" placeholder="请输入登录密码" />
             <button v-if="!session.token" :disabled="loginBusy" @click="loginRemote">
               {{ loginBusy ? "登录中" : "登录" }}
             </button>

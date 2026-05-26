@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
+import json
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.deps import CurrentSession, get_current_session
-from app.models import AcademicPlan, AcademicProgress, Application, AuditLog, KnowledgeItem, Notice, NoticeBatch, Student
+from app.models import AcademicPlan, AcademicProgress, Application, AuditLog, KnowledgeItem, KnowledgeMissKeyword, Notice, NoticeBatch, SmsSimulation, Student
+from app.services.permissions import scoped_student_ids
 from app.services.serializers import audit_log
 
 router = APIRouter(tags=["workbench"])
@@ -13,9 +15,15 @@ RISK_ORDER = {"高": 0, "中": 1, "低": 2, "数据缺失": 3}
 
 
 def knowledge_miss_rows(db: Session, limit: int) -> list[dict]:
+    rows = db.scalars(select(KnowledgeMissKeyword).order_by(KnowledgeMissKeyword.count.desc()).limit(limit)).all()
+    if rows:
+        return [
+            {"keyword": row.keyword, "count": row.count, "lastAt": int(row.updated_at.timestamp() * 1000) if row.updated_at else None}
+            for row in rows
+        ]
     count_expr = func.count().label("count")
     last_at_expr = func.max(AuditLog.at).label("last_at")
-    rows = db.execute(
+    legacy = db.execute(
         select(AuditLog.target, count_expr, last_at_expr)
         .where(AuditLog.action == "knowledge_miss", AuditLog.target != "")
         .group_by(AuditLog.target)
@@ -28,7 +36,7 @@ def knowledge_miss_rows(db: Session, limit: int) -> list[dict]:
             "count": row._mapping["count"],
             "lastAt": int(row._mapping["last_at"].timestamp() * 1000) if row._mapping["last_at"] else None,
         }
-        for row in rows
+        for row in legacy
     ]
 
 
@@ -48,12 +56,15 @@ def summary(db: Session = Depends(get_db), session: CurrentSession = Depends(get
     pending_stmt = select(func.count()).select_from(Application).where(Application.status == "审批中")
     if student_filter is not None:
         pending_stmt = pending_stmt.where(Application.student_id.in_(student_filter))
+    miss_count = db.scalar(select(func.count()).select_from(KnowledgeMissKeyword)) or 0
+    if not miss_count:
+        miss_count = db.scalar(select(func.count()).select_from(AuditLog).where(AuditLog.action == "knowledge_miss")) or 0
     return {
         "students": student_count,
         "pendingApps": db.scalar(pending_stmt) or 0,
-        "miss": db.scalar(select(func.count()).select_from(AuditLog).where(AuditLog.action == "knowledge_miss")) or 0,
+        "miss": miss_count,
         "batches": db.scalar(select(func.count()).select_from(NoticeBatch)) or 0,
-        "sms": 0,
+        "sms": db.scalar(select(func.count()).select_from(SmsSimulation)) or 0,
     }
 
 
@@ -86,6 +97,37 @@ def logs(limit: int = 120, db: Session = Depends(get_db), session: CurrentSessio
     return {"list": [audit_log(row) for row in rows]}
 
 
+@router.get("/audit/logs/export")
+def export_audit_logs(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)):
+    import csv
+    from io import StringIO
+    from urllib.parse import quote
+
+    from fastapi.responses import Response
+
+    if session.role not in {"teacher", "leader"}:
+        raise HTTPException(status_code=403, detail="forbidden")
+    rows = db.scalars(select(AuditLog).order_by(AuditLog.at.desc()).limit(5000)).all()
+    fp = StringIO()
+    writer = csv.writer(fp)
+    writer.writerow(["时间", "操作人", "角色", "动作", "目标", "详情"])
+    for row in rows:
+        writer.writerow([
+            int(row.at.timestamp() * 1000) if row.at else "",
+            row.actor_id,
+            row.role,
+            row.action,
+            row.target,
+            json.dumps(row.detail or {}, ensure_ascii=False) if row.detail else "",
+        ])
+    filename = quote("审计日志导出.csv")
+    return Response(
+        "\ufeff" + fp.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
 @router.get("/workbench/knowledge/misses")
 def knowledge_misses(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
     if session.role not in {"teacher", "leader"}:
@@ -97,18 +139,18 @@ def knowledge_misses(db: Session = Depends(get_db), session: CurrentSession = De
 def sms_simulation(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
     if session.role not in {"teacher", "leader", "coordinator"}:
         raise HTTPException(status_code=403, detail="forbidden")
-    rows = db.scalars(select(NoticeBatch).order_by(NoticeBatch.created_at.desc()).limit(50)).all()
+    rows = db.scalars(select(SmsSimulation).order_by(SmsSimulation.created_at.desc()).limit(100)).all()
     return {
         "list": [
             {
-                "id": f"sms_{row.id}",
-                "batchId": row.id,
+                "id": row.id,
+                "batchId": row.batch_id,
                 "at": int(row.created_at.timestamp() * 1000) if row.created_at else None,
-                "audience": [],
-                "text": f"[短信通知] {row.title}",
+                "audience": [row.phone_masked],
+                "text": row.text,
+                "studentId": row.student_id,
             }
             for row in rows
-            if any(channel.get("name") == "短信" for channel in (row.channels or []))
         ],
     }
 
@@ -163,3 +205,42 @@ def academic_risk_for_student(db: Session, student: Student) -> dict:
         "totalGap": total_gap,
         "gaps": gaps,
     }
+
+
+@router.get("/workbench/applications/export")
+def export_applications(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)):
+    import csv
+    from io import StringIO
+    from urllib.parse import quote
+
+    from fastapi.responses import Response
+
+    if session.role not in {"teacher", "leader", "coordinator"}:
+        raise HTTPException(status_code=403, detail="forbidden")
+    stmt = select(Application).order_by(Application.created_at.desc())
+    scope_ids = scoped_student_ids(db, session) if session.role == "coordinator" else None
+    if scope_ids is not None:
+        stmt = stmt.where(Application.student_id.in_(scope_ids))
+    rows = db.scalars(stmt).all()
+    students = {row.student_id: row for row in db.scalars(select(Student)).all()}
+    fp = StringIO()
+    writer = csv.writer(fp)
+    writer.writerow(["申请ID", "学号", "姓名", "类型", "子类", "状态", "提交时间", "审批意见"])
+    for row in rows:
+        student = students.get(row.student_id)
+        writer.writerow([
+            row.id,
+            row.student_id,
+            student.name if student else "",
+            row.type,
+            row.subtype or "",
+            row.status,
+            int(row.created_at.timestamp() * 1000) if row.created_at else "",
+            row.teacher_comment or "",
+        ])
+    filename = quote("申请记录导出.csv")
+    return Response(
+        "\ufeff" + fp.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )

@@ -3,5 +3,7 @@ export function createHonorsApi(call) {
     listHonors: (query = {}) => call({ path: "/honors", data: query }),
     createHonor: (payload) => call({ path: "/honors", method: "POST", data: payload }),
     updateHonor: (id, payload) => call({ path: `/honors/${id}`, method: "PUT", data: payload }),
+    deleteHonor: (id) => call({ path: `/honors/${id}`, method: "DELETE" }),
+    setHonorOnline: (id, online) => call({ path: `/honors/${id}/online`, method: "POST", data: { online } }),
   };
 }

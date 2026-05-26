@@ -3,12 +3,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.deps import CurrentSession, get_current_session
-from app.models import PartyProgress
+from app.models import PartyProgress, PartyStage, PartyTimelineRule, Student
 from app.services.common import audit, now_ms
 from app.services.seed_data import FLOW_STAGES
 from app.services.serializers import party
@@ -29,7 +30,28 @@ def progress(db: Session = Depends(get_db), session: CurrentSession = Depends(ge
     row = db.get(PartyProgress, session.student_id)
     if not row:
         raise HTTPException(status_code=404, detail="party progress not found")
-    return {"flowName": "入党流程", "stages": FLOW_STAGES, "timelineRules": timeline_rules(), **party(row)}
+    return {"flowName": "入党流程", "stages": load_party_stages(db), "timelineRules": timeline_rules(), **party(row)}
+
+
+@router.get("/workbench/party/progress")
+def list_party_progress(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+    if session.role not in {"teacher", "leader"}:
+        raise HTTPException(status_code=403, detail="forbidden")
+    students = {row.student_id: row for row in db.scalars(select(Student)).all()}
+    stages = {item["key"]: item["name"] for item in load_party_stages(db)}
+    payload = []
+    for row in db.scalars(select(PartyProgress).order_by(PartyProgress.updated_at.desc())).all():
+        student = students.get(row.student_id)
+        payload.append(
+            {
+                **party(row),
+                "name": student.name if student else "",
+                "className": student.class_name if student else "",
+                "grade": student.grade if student else "",
+                "currentStageName": stages.get(row.current_key, row.current_key),
+            },
+        )
+    return {"list": payload, "stages": load_party_stages(db)}
 
 
 @router.post("/party/tasks/{task_id}/done")
@@ -58,19 +80,48 @@ def advance(payload: dict, db: Session = Depends(get_db), session: CurrentSessio
     return party(row)
 
 
+@router.put("/workbench/party/stages")
+def update_party_stages(payload: dict, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+    if session.role != "teacher":
+        raise HTTPException(status_code=403, detail="forbidden")
+    stages = payload.get("stages", [])
+    for item in stages:
+        db.merge(
+            PartyStage(
+                stage_key=item.get("key") or item.get("stageKey"),
+                name=item.get("name", ""),
+                desc=item.get("desc", ""),
+                sort_order=int(item.get("order") or item.get("sortOrder") or 0),
+            ),
+        )
+    audit(db, session, "party_stages_update", "party_stages", {"count": len(stages)})
+    db.commit()
+    return {"ok": True, "stages": load_party_stages(db)}
+
+
 @router.get("/workbench/party/timeline")
-def get_timeline(session: CurrentSession = Depends(get_current_session)) -> dict:
+def get_timeline(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
     if session.role not in {"teacher", "leader"}:
         raise HTTPException(status_code=403, detail="forbidden")
-    return {"stages": FLOW_STAGES, "rules": timeline_rules()}
+    return {"stages": load_party_stages(db), "rules": timeline_rules()}
 
 
 @router.put("/workbench/party/timeline")
-def update_timeline(payload: dict, session: CurrentSession = Depends(get_current_session)) -> dict:
+def update_timeline(payload: dict, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
     if session.role != "teacher":
         raise HTTPException(status_code=403, detail="forbidden")
     rules = normalize_timeline_rules(payload.get("rules", []))
-    timeline_path().write_text(json.dumps(rules, ensure_ascii=False, indent=2), encoding="utf-8")
+    for item in rules:
+        db.merge(
+            PartyTimelineRule(
+                stage_key=item["stageKey"],
+                duration_days=item["durationDays"],
+                remind_before_days=item["remindBeforeDays"],
+                material=item["material"],
+            ),
+        )
+    audit(db, session, "party_timeline_update", "party_timeline_rules", {"count": len(rules)})
+    db.commit()
     return {"ok": True, "rules": rules}
 
 
@@ -78,13 +129,16 @@ def update_timeline(payload: dict, session: CurrentSession = Depends(get_current
 def refresh_reminders(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
     if session.role != "teacher":
         raise HTTPException(status_code=403, detail="forbidden")
+    return run_party_reminders(db, session)
+
+
+def run_party_reminders(db: Session, session: CurrentSession) -> dict:
     rows = db.query(PartyProgress).all()
     changed = 0
     for row in rows:
         if ensure_timeline_task(row):
             changed += 1
     audit(db, session, "party_reminders_refresh", "party_progress", {"changed": changed})
-    db.commit()
     return {"ok": True, "students": len(rows), "changed": changed}
 
 
@@ -95,13 +149,56 @@ def timeline_path() -> Path:
 
 
 def timeline_rules() -> list[dict]:
-    path = timeline_path()
-    if not path.exists():
-        return DEFAULT_TIMELINE_RULES
+    from sqlalchemy import select
+
+    from app.db.session import SessionLocal
+    from app.models import PartyTimelineRule
+
+    db = SessionLocal()
     try:
-        return normalize_timeline_rules(json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, json.JSONDecodeError):
+        rows = db.scalars(select(PartyTimelineRule)).all()
+        if rows:
+            return normalize_timeline_rules(
+                [
+                    {
+                        "stageKey": row.stage_key,
+                        "durationDays": row.duration_days,
+                        "remindBeforeDays": row.remind_before_days,
+                        "material": row.material,
+                    }
+                    for row in rows
+                ],
+            )
+        path = timeline_path()
+        if path.exists():
+            try:
+                legacy = normalize_timeline_rules(json.loads(path.read_text(encoding="utf-8")))
+                for item in legacy:
+                    db.merge(
+                        PartyTimelineRule(
+                            stage_key=item["stageKey"],
+                            duration_days=item["durationDays"],
+                            remind_before_days=item["remindBeforeDays"],
+                            material=item["material"],
+                        ),
+                    )
+                db.commit()
+                return legacy
+            except (OSError, json.JSONDecodeError):
+                pass
+        for item in DEFAULT_TIMELINE_RULES:
+            db.merge(
+                PartyTimelineRule(
+                    stage_key=item["stageKey"],
+                    duration_days=item["durationDays"],
+                    remind_before_days=item["remindBeforeDays"],
+                    material=item["material"],
+                ),
+            )
+        db.commit()
         return DEFAULT_TIMELINE_RULES
+    finally:
+        db.close()
 
 
 def normalize_timeline_rules(rules: list[dict]) -> list[dict]:
@@ -155,5 +252,19 @@ def current_stage_start(row: PartyProgress) -> datetime:
     return row.updated_at or row.created_at or datetime.now(timezone.utc)
 
 
-def stage_name(key: str) -> str:
+def load_party_stages(db: Session) -> list[dict]:
+    rows = db.scalars(select(PartyStage).order_by(PartyStage.sort_order)).all()
+    if rows:
+        return [{"key": r.stage_key, "name": r.name, "desc": r.desc, "order": r.sort_order} for r in rows]
+    for item in FLOW_STAGES:
+        db.merge(PartyStage(stage_key=item["key"], name=item["name"], desc=item["desc"], sort_order=item["order"]))
+    db.commit()
+    return FLOW_STAGES
+
+
+def stage_name(key: str, db: Session | None = None) -> str:
+    if db is not None:
+        row = db.get(PartyStage, key)
+        if row:
+            return row.name
     return next((item["name"] for item in FLOW_STAGES if item["key"] == key), key)

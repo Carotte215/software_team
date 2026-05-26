@@ -1,23 +1,40 @@
 # 学院学生综合服务与党团管理平台
 
-本项目是“学院学生综合服务与党团管理平台”的课程实现版，当前包含：
+本项目是「学院学生综合服务与党团管理平台」的课程实现版。
 
-- `backend/`：Python + FastAPI + PostgreSQL 后端。
-- `web/`：Vue 3 + Vite 响应式 Web 前端。
-- 根目录小程序代码：早期微信小程序结构与本地仓储实现，保留作课程过程材料。
-- `docs/`：软件设计规格说明书和迭代记录。
+- **生产访问**：http://10.10.0.21/
+- `backend/`：Python + FastAPI + PostgreSQL（可探针切换 Kingbase）
+- `web/`：Vue 3 + Vite 响应式 Web 前端（唯一维护端）
+- 根目录小程序代码：**已冻结**，仅作过程材料保留
+- `docs/`：部署说明、验收清单、需求追溯
 
-## 快速启动
+## 登录
 
-后端：
+生产环境使用 **学号 + 个人密码 + 角色** 登录（JWT）。
 
-```bash
-./scripts/dev-backend.sh
+- 种子数据初始密码：`Stu@` + 学号后 6 位
+- 管理老师可在工作台重置学生密码
+
+## 快速启动（本地）
+
+**Windows（PowerShell）**
+
+```powershell
+.\scripts\setup-local.ps1
+$env:PYTHONPATH="backend"; python -m app.seed
+# 终端 1
+.\scripts\dev-backend.ps1
+# 终端 2
+.\scripts\dev-web.ps1
 ```
 
-前端：
+**Linux / macOS**
 
 ```bash
+pip install -r backend/requirements.txt
+cd web && npm install && cd ..
+PYTHONPATH=backend python -m app.seed
+./scripts/dev-backend.sh
 ./scripts/dev-web.sh
 ```
 
@@ -27,13 +44,33 @@
 Web: http://127.0.0.1:5177/
 API: http://127.0.0.1:8000/api
 Docs: http://127.0.0.1:8000/docs
+Cloud: http://10.10.0.21/
 ```
 
-前端右上角可在 `Mock` 和 `Remote` 间切换。`Remote` 默认连接 `http://127.0.0.1:8000/api`，演示登录口令为：
+生产构建：
 
-```text
-demo123456
+```bash
+cd web && VITE_API_BASE=/api npm run build
 ```
+
+云部署详见 [docs/deploy-cloud.md](docs/deploy-cloud.md)。验收清单见 [docs/acceptance-checklist.md](docs/acceptance-checklist.md)。
+
+前端开发环境可在右上角切换 Mock/Remote。生产包默认 Remote + `/api`。
+
+## 已实现能力（相对 V3.0）
+
+- 学号+密码 JWT 登录、Token 刷新、改密/重置密码
+- 知识库检索/维护、未命中词、官方链接、附件预览、CSV 导出
+- 党团阶段配置、标准时间线、提醒任务、管理端进度一览
+- 理论题库维护、随机抽题、每日限次自测
+- 定向通知发布/定时批次、外部录入、URL 抓取、渠道诚实统计
+- 申请草稿/审批/48h 撤回重批、HTML 模板、证明预览与 PDF
+- 荣誉维护/删除、附件与可见范围
+- 学生画像字段策略、CSV/XLSX 导入导出、extension 自维护
+- 培养方案维护、PDF 成绩单解析（文本版 + 可选 OCR）、学业风险列表
+- 工作台 CSV 导出（学生/申请/知识库/审计）、后台定时任务
+
+**明确不做**：微信 OAuth、微哨、真实短信、开放 AI 对话、电子签章、复杂选课。
 
 ## 模块划分
 
@@ -91,6 +128,7 @@ demo123456
 ```bash
 python3 -m compileall backend/app
 ./scripts/smoke-backend.sh
+BASE_URL=http://10.10.0.21 ./scripts/smoke-backend.sh
 cd web && npm run build
 ```
 

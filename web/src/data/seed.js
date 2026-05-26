@@ -133,14 +133,19 @@ export function createSeedDatabase() {
     partyByStudent: Object.fromEntries(students.map((s, i) => [s.studentId, makeParty(s.studentId, i)])),
     applications,
     honors: [
-      { id: "h1", title: "国家奖学金", winner: "李某", year: 2025, major: "计算机科学与技术", grade: "2022级", category: "国家级", intro: "学年绩点与综合素质评价列前。" },
-      { id: "h2", title: "校级优秀共青团员", winner: "王某", year: 2024, major: "软件工程", grade: "2023级", category: "校级", intro: "志愿服务与团支部建设突出。" },
-      { id: "h3", title: "CCPC 区域赛铜牌", winner: "钱晨", year: 2026, major: "软件工程", grade: "2024级", category: "省部级", intro: "程序设计竞赛团队赛获奖。" },
+      { id: "h1", title: "国家奖学金", winner: "李某", year: 2025, major: "计算机科学与技术", grade: "2022级", category: "国家级", intro: "学年绩点与综合素质评价列前。", online: true },
+      { id: "h2", title: "校级优秀共青团员", winner: "王某", year: 2024, major: "软件工程", grade: "2023级", category: "校级", intro: "志愿服务与团支部建设突出。", online: true },
+      { id: "h3", title: "CCPC 区域赛铜牌", winner: "钱晨", year: 2026, major: "软件工程", grade: "2024级", category: "省部级", intro: "程序设计竞赛团队赛获奖。", online: true },
     ],
     academic: makeAcademic(students),
     missKeywords: [],
     auditLogs: [],
     smsSimulation: [],
+    workbenchTemplates: [
+      { id: "tpl_leave", name: "请假条（通用）", scene: "日常请假", format: "docx" },
+      { id: "tpl_budget", name: "学生活动经费预算表", scene: "团学活动", format: "xlsx" },
+    ],
+    applicationTemplates: [],
   };
 }
 

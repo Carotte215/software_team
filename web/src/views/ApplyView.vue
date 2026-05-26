@@ -98,6 +98,19 @@ async function saveDraft() {
   await load();
 }
 
+const previewHtml = ref("");
+
+async function previewDocument() {
+  if (!form.reason.trim()) {
+    toast("请先填写申请说明");
+    return;
+  }
+  const payload = await buildPayload();
+  const res = await api.previewApplication(payload);
+  previewHtml.value = res.html || "";
+  toast("已生成预览");
+}
+
 async function submit() {
   if (!form.reason.trim()) {
     toast("请填写申请说明");
@@ -132,9 +145,9 @@ async function downloadAttachment(file) {
   saveBlob(blob, file.name || "attachment");
 }
 
-async function downloadDocument(item) {
-  const blob = await api.downloadApplicationDocument(item.id);
-  saveBlob(blob, `${item.type}-${item.subtype || item.id}.doc`);
+async function downloadDocument(item, format = "pdf") {
+  const blob = await api.downloadApplicationDocument(item.id, format);
+  saveBlob(blob, `${item.type}-${item.subtype || item.id}.${format === "pdf" ? "pdf" : "doc"}`);
   toast("文档已生成");
 }
 </script>
@@ -178,10 +191,12 @@ async function downloadDocument(item) {
         </label>
         <div class="span-2 row">
           <button type="button" @click="saveDraft">保存草稿</button>
+          <button type="button" @click="previewDocument">预览证明</button>
           <button class="primary">提交审批</button>
           <button type="button" @click="resetForm">新建</button>
         </div>
       </form>
+      <iframe v-if="previewHtml" class="card" style="width:100%;min-height:320px;margin-top:12px;border:1px solid #ddd" :srcdoc="previewHtml" title="申请预览"></iframe>
     </section>
 
     <section>
@@ -199,7 +214,8 @@ async function downloadDocument(item) {
           </p>
           <div class="row wrap">
             <button @click="openDetail(item)">查看详情</button>
-            <button @click="downloadDocument(item)">生成文档</button>
+            <button @click="downloadDocument(item, 'pdf')">PDF</button>
+            <button @click="downloadDocument(item, 'doc')">Word</button>
             <button
               v-if="[APPROVAL.DRAFT, APPROVAL.REJECTED].includes(item.status)"
               class="primary"
@@ -221,7 +237,8 @@ async function downloadDocument(item) {
     </div>
     <p>{{ selected.type }} · {{ selected.subtype }} · {{ selected.id }}</p>
     <p class="muted">说明：{{ selected.form?.reason || "未填写" }}</p>
-    <button @click="downloadDocument(selected)">生成申请/证明文档</button>
+    <button @click="downloadDocument(selected, 'pdf')">下载 PDF 证明</button>
+    <button @click="downloadDocument(selected, 'doc')">下载 Word</button>
     <div v-if="selected.attachments?.length" class="section-title">附件</div>
     <div v-if="selected.attachments?.length" class="stack">
       <div v-for="file in selected.attachments" :key="file.id || file.name" class="card row between">

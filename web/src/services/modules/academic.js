@@ -12,6 +12,12 @@ export function createAcademicApi(call) {
     },
     saveAcademicProgress: (modules) => call({ path: "/academic/progress", method: "PUT", data: { modules } }),
     uploadTranscript: (meta) => call({ path: "/academic/transcript", method: "POST", data: { meta } }),
+    uploadTranscriptFile: (file, confirm = false) => {
+      const data = new FormData();
+      data.append("file", file);
+      data.append("confirm", String(confirm));
+      return call({ path: "/academic/transcript/upload", method: "POST", data });
+    },
     listAcademicRisks: () => call({ path: "/workbench/academic/risks" }),
   };
 }

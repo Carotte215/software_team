@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.deps import CurrentSession, get_current_session
 from app.models import Application, Student
+from app.routers.application_templates import find_template
 from app.schemas import ApplicationCreate, ApplicationDecision
 from app.services.common import audit, now_ms, uid
 from app.services.permissions import COORDINATOR, LEADER, TEACHER, require_roles, scoped_student_ids
@@ -86,10 +87,39 @@ def save_draft(payload: ApplicationCreate, db: Session = Depends(get_db), sessio
     return application(row)
 
 
+@router.post("/applications/preview")
+def preview_application(
+    payload: ApplicationCreate,
+    db: Session = Depends(get_db),
+    session: CurrentSession = Depends(get_current_session),
+) -> dict:
+    student = db.get(Student, session.student_id)
+    if not student:
+        raise HTTPException(status_code=404, detail="student not found")
+    fake = Application(
+        id="preview",
+        student_id=session.student_id,
+        type=payload.type,
+        subtype=payload.subtype,
+        status=STATUS_DRAFT,
+        form=payload.form,
+        attachments=payload.attachments,
+        teacher_comment="",
+        audit_trail=[],
+    )
+    html = render_application_document(fake, student, db)
+    return {"ok": True, "html": html}
+
+
 @router.post("/applications")
 def create_application(payload: ApplicationCreate, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
     if payload.type == "盖章申请" and not payload.attachments:
         raise HTTPException(status_code=400, detail="盖章申请须上传附件")
+    draft_rows = db.scalars(
+        select(Application).where(Application.student_id == session.student_id, Application.status == STATUS_DRAFT),
+    ).all()
+    for draft in draft_rows:
+        db.delete(draft)
     row = Application(
         id=uid("app"),
         student_id=session.student_id,
@@ -134,11 +164,19 @@ def application_document(
     student = db.get(Student, row.student_id)
     if not student:
         raise HTTPException(status_code=404, detail="student not found")
-    body = render_application_document(row, student)
+    body = render_application_document(row, student, db)
     audit(db, session, "application_document", app_id, {"format": format})
     db.commit()
     if format == "html":
         return Response(body, media_type="text/html; charset=utf-8")
+    if format == "pdf":
+        pdf_bytes = render_application_pdf(row, student, body)
+        filename = quote(f"{row.type}-{row.subtype or row.id}-{student.name}.pdf")
+        return Response(
+            pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+        )
     filename = quote(f"{row.type}-{row.subtype or row.id}-{student.name}.doc")
     return Response(
         body.encode("utf-8"),
@@ -179,9 +217,31 @@ def submit_existing_application(
     return application(row)
 
 
-def render_application_document(row: Application, student: Student) -> str:
+def render_application_document(row: Application, student: Student, db: Session) -> str:
+    tpl = find_template(db, row.type, row.subtype or "")
     form = row.form or {}
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    ctx = {
+        "{{name}}": student.name,
+        "{{studentId}}": student.student_id,
+        "{{grade}}": student.grade,
+        "{{major}}": student.major,
+        "{{className}}": student.class_name,
+        "{{type}}": row.type,
+        "{{subtype}}": row.subtype or "",
+        "{{reason}}": str(form.get("reason", "")),
+        "{{startDate}}": str(form.get("startDate", "")),
+        "{{endDate}}": str(form.get("endDate", "")),
+        "{{status}}": row.status,
+        "{{comment}}": row.teacher_comment or "",
+        "{{generatedAt}}": generated_at,
+    }
+    if tpl and tpl.body_html:
+        html = tpl.body_html
+        for k, v in ctx.items():
+            html = html.replace(k, escape(str(v)))
+        return html
+
     fields = [
         ("姓名", student.name),
         ("学号", student.student_id),
@@ -224,6 +284,39 @@ def render_application_document(row: Application, student: Student) -> str:
   </div>
 </body>
 </html>"""
+
+
+def render_application_pdf(row: Application, student: Student, html_body: str | None = None) -> bytes:
+    from io import BytesIO
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    from reportlab.pdfgen import canvas
+
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    c.setFont("STSong-Light", 16)
+    c.drawString(72, 800, "学院学生事务申请/证明单")
+    c.setFont("STSong-Light", 11)
+    y = 760
+    form = row.form or {}
+    lines = [
+        f"姓名：{student.name}",
+        f"学号：{student.student_id}",
+        f"年级/专业/班级：{student.grade} / {student.major} / {student.class_name}",
+        f"申请类型：{row.type} / {row.subtype}",
+        f"申请事由：{form.get('reason', '')}",
+        f"审批状态：{row.status}",
+        f"审批意见：{row.teacher_comment or ''}",
+    ]
+    for line in lines:
+        c.drawString(72, y, line[:80])
+        y -= 22
+    c.showPage()
+    c.save()
+    return buffer.getvalue()
 
 
 @router.post("/workbench/applications/{app_id}/{action}")

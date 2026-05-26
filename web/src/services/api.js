@@ -8,6 +8,7 @@ import { createNoticesApi } from "./modules/notices.js";
 import { createPartyTheoryApi } from "./modules/partyTheory.js";
 import { createStudentsApi } from "./modules/students.js";
 import { createSystemApi } from "./modules/system.js";
+import { createTemplatesApi } from "./modules/templates.js";
 import { createWorkbenchApi } from "./modules/workbench.js";
 
 function apiPath(path) {
@@ -34,5 +35,6 @@ export function createApi(sessionRef) {
     ...createHonorsApi(call, helpers),
     ...createAcademicApi(call, helpers),
     ...createWorkbenchApi(call, helpers),
+    ...createTemplatesApi(call),
   };
 }
