@@ -1,6 +1,6 @@
 # 云服务器安全更新指南（含回滚）
 
-目标：`http://10.10.0.21/`。本文假设仓库已在服务器上 clone 过，本次只是**拉新版本**，不是从零安装。
+目标：`http://10.10.0.21/`。**无 root 账号** 时请先读 [deploy-user-account.md](./deploy-user-account.md)，全程用 `user` 执行 `bash scripts/server/update-app.sh`，**不要用 sudo**。
 
 ## 更新前：先备份（必做）
 
@@ -11,24 +11,24 @@ export APP_ROOT=/opt/student_service/software_team
 export BACKUP_ROOT=/opt/student_service/backups
 export STAMP=$(date +%Y%m%d_%H%M%S)
 
-sudo mkdir -p "$BACKUP_ROOT/$STAMP"
+mkdir -p "$BACKUP_ROOT/$STAMP"
 cd "$APP_ROOT"
 
 # 1) 记录当前 Git 版本（回滚用）
-git rev-parse HEAD | sudo tee "$BACKUP_ROOT/$STAMP/git_commit.txt"
+git rev-parse HEAD > "$BACKUP_ROOT/$STAMP/git_commit.txt"
 
 # 2) 备份环境变量（含数据库密码，勿泄露）
-sudo cp /opt/student_service/.env "$BACKUP_ROOT/$STAMP/.env" 2>/dev/null || \
-  sudo cp "$APP_ROOT/../.env" "$BACKUP_ROOT/$STAMP/.env" 2>/dev/null || true
+cp /opt/student_service/.env "$BACKUP_ROOT/$STAMP/.env" 2>/dev/null || \
+  cp "$APP_ROOT/../.env" "$BACKUP_ROOT/$STAMP/.env" 2>/dev/null || true
 
 # 3) 备份上传目录（用户附件）
-sudo cp -a /opt/student_service/uploads "$BACKUP_ROOT/$STAMP/uploads" 2>/dev/null || true
+cp -a /opt/student_service/uploads "$BACKUP_ROOT/$STAMP/uploads" 2>/dev/null || true
 
-# 4) 备份数据库（PostgreSQL 示例，库名/用户按 .env 中 DATABASE_URL 修改）
-sudo -u postgres pg_dump student_service | sudo tee "$BACKUP_ROOT/$STAMP/student_service.sql" > /dev/null
+# 4) 备份数据库（从 .env DATABASE_URL 读取；无权限则跳过）
+bash -c 'source scripts/server/service-common.sh && service_common_init && APP_ROOT='"$APP_ROOT"' pg_dump_backup '"$BACKUP_ROOT/$STAMP/student_service.sql"'"
 
-# 5) 备份当前前端静态文件（可选，秒级回滚页面）
-sudo cp -a "$APP_ROOT/web/dist" "$BACKUP_ROOT/$STAMP/web_dist" 2>/dev/null || true
+# 5) 备份当前前端静态文件（可选）
+cp -a "$APP_ROOT/web/dist" "$BACKUP_ROOT/$STAMP/web_dist" 2>/dev/null || true
 
 echo "备份完成：$BACKUP_ROOT/$STAMP"
 cat "$BACKUP_ROOT/$STAMP/git_commit.txt"
@@ -42,30 +42,22 @@ cat "$BACKUP_ROOT/$STAMP/git_commit.txt"
 export APP_ROOT=/opt/student_service/software_team
 cd "$APP_ROOT"
 
-# 拉取 GitHub 最新 main
-git fetch origin
-git log -1 --oneline origin/main    # 先看一眼将要更新的版本
-git pull origin main
+# 一键更新（备份 + fetch/reset + 依赖 + migrate + build + 重启）
+bash scripts/server/update-app.sh
+```
 
-# Python 依赖（有新增包时必须执行）
+脚本内部使用 `git reset --hard origin/main`，**不要用 sudo**，避免 `.git` 权限被 root 占用。
+
+若需手动分步：
+
+```bash
+git fetch origin
+git reset --hard origin/main
 source /opt/student_service/venv/bin/activate
 pip install -r backend/requirements.txt
-
-# 数据库轻量迁移（也可在重启后端时自动执行，见 main.py 启动钩子）
-cd "$APP_ROOT"
-PYTHONPATH=backend python3 -m app.db.migrate
-
-# 前端重新构建（生产固定 Remote + /api）
-cd web
-npm install
-VITE_API_BASE=/api npm run build
-
-# 重启后端（systemd 名称以服务器实际为准，常见如下）
-sudo systemctl restart student-service
-# 若无 systemd，需手动重启 uvicorn 进程
-
-# 重载 Nginx（仅当改过 nginx 配置时需要）
-sudo nginx -t && sudo systemctl reload nginx
+PYTHONPATH=backend python -m app.db.migrate
+cd web && VITE_API_BASE=/api npm run build && cd ..
+systemctl --user restart student-service   # 或 bash scripts/server/restart-backend.sh
 ```
 
 ## 更新后验证
@@ -95,34 +87,33 @@ git checkout "$OLD_COMMIT"
 
 source /opt/student_service/venv/bin/activate
 pip install -r backend/requirements.txt
-cd web && npm install && VITE_API_BASE=/api npm run build
-sudo systemctl restart student-service
+cd web && npm install && VITE_API_BASE=/api npm run build && cd ..
+systemctl --user restart student-service || bash scripts/server/restart-backend.sh
 ```
 
 ### B. 回滚前端静态文件（仅页面坏了）
 
 ```bash
 export BACKUP=/opt/student_service/backups/<STAMP>
-sudo rm -rf /opt/student_service/software_team/web/dist
-sudo cp -a "$BACKUP/web_dist" /opt/student_service/software_team/web/dist
-sudo systemctl reload nginx
+rm -rf /opt/student_service/software_team/web/dist
+cp -a "$BACKUP/web_dist" /opt/student_service/software_team/web/dist
+# Nginx 由管理员重载；user 账号通常无需操作
 ```
 
 ### C. 回滚数据库（迁移搞坏了才用）
 
 ```bash
 export BACKUP=/opt/student_service/backups/<STAMP>
-sudo -u postgres psql -c "DROP DATABASE IF EXISTS student_service;"
-sudo -u postgres psql -c "CREATE DATABASE student_service OWNER student_service;"
-sudo -u postgres psql student_service < "$BACKUP/student_service.sql"
-sudo systemctl restart student-service
+# 需数据库管理员权限；user 账号可能无法执行，联系运维
+psql "$DATABASE_URL" < "$BACKUP/student_service.sql"
+systemctl --user restart student-service || bash scripts/server/restart-backend.sh
 ```
 
 ### D. 回滚环境变量
 
 ```bash
-sudo cp /opt/student_service/backups/<STAMP>/.env /opt/student_service/.env
-sudo systemctl restart student-service
+cp /opt/student_service/backups/<STAMP>/.env /opt/student_service/.env
+systemctl --user restart student-service || bash scripts/server/restart-backend.sh
 ```
 
 ## 注意事项
@@ -139,8 +130,10 @@ sudo systemctl restart student-service
 ## 找不到 systemd 服务名时
 
 ```bash
+systemctl --user list-units --type=service | grep -i student
 systemctl list-units --type=service | grep -i student
 ps aux | grep uvicorn
+cat /opt/student_service/student-service.pid 2>/dev/null
 ```
 
 常见启动命令（无 systemd 时）：

@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
-# 日常安全更新（备份 + pull + 按需安装依赖 + 构建 + 重启）
+# 日常安全更新（user 账号，无需 root/sudo）
 # 用法：bash scripts/server/update-app.sh
-#       bash scripts/server/update-app.sh --build-only   # 只构建前端
-#       bash scripts/server/update-app.sh --no-backup    # 跳过备份（不推荐）
+#       bash scripts/server/update-app.sh --build-only
+#       bash scripts/server/update-app.sh --no-backup
 
 set -euo pipefail
 
-BASE="${BASE:-/opt/student_service}"
-APP_ROOT="${APP_ROOT:-$BASE/software_team}"
-VENV_DIR="${VENV_DIR:-$BASE/venv}"
-UPLOAD_DIR="${UPLOAD_DIR:-$BASE/uploads}"
-ENV_FILE="${ENV_FILE:-$BASE/.env}"
-PIP_CACHE="${PIP_CACHE:-$BASE/.cache/pip}"
-NPM_CACHE="${NPM_CACHE:-$BASE/.npm-cache}"
-BACKUP_ROOT="${BACKUP_ROOT:-$BASE/backups}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=service-common.sh
+source "$SCRIPT_DIR/service-common.sh"
+service_common_init
+
+APP_ROOT="${APP_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 STAMP=$(date +%Y%m%d_%H%M%S)
 DO_BACKUP=1
 BUILD_ONLY=0
@@ -25,9 +23,12 @@ for arg in "$@"; do
   esac
 done
 
+ensure_run_as_app_user
 cd "$APP_ROOT"
-export PIP_CACHE_DIR="$PIP_CACHE"
-export npm_config_cache="$NPM_CACHE"
+ensure_git_writable
+
+export PIP_CACHE_DIR="${PIP_CACHE:-$BASE/.cache/pip}"
+export npm_config_cache="${NPM_CACHE:-$BASE/.npm-cache}"
 export npm_config_registry="${npm_config_registry:-https://registry.npmmirror.com}"
 
 hash_file() {
@@ -49,17 +50,11 @@ if [[ "$BUILD_ONLY" -eq 0 ]]; then
     [[ -f "$ENV_FILE" ]] && cp "$ENV_FILE" "$BACKUP_ROOT/$STAMP/.env"
     [[ -d "$UPLOAD_DIR" ]] && cp -a "$UPLOAD_DIR" "$BACKUP_ROOT/$STAMP/uploads" 2>/dev/null || true
     [[ -d web/dist ]] && cp -a web/dist "$BACKUP_ROOT/$STAMP/web_dist" 2>/dev/null || true
-    if command -v pg_dump >/dev/null 2>&1; then
-      pg_dump student_service > "$BACKUP_ROOT/$STAMP/student_service.sql" 2>/dev/null || \
-        sudo -u postgres pg_dump student_service > "$BACKUP_ROOT/$STAMP/student_service.sql" 2>/dev/null || \
-        echo "WARN: pg_dump 失败，请手动备份数据库"
-    fi
+    pg_dump_backup "$BACKUP_ROOT/$STAMP/student_service.sql"
     echo "备份 commit: $(cat "$BACKUP_ROOT/$STAMP/git_commit.txt")"
   fi
 
-  echo "==> 拉取最新代码"
-  git fetch origin
-  git pull origin main
+  git_sync_main
 
   current_req=$(hash_file backend/requirements.txt)
   if [[ ! -f "$REQ_HASH_FILE" ]] || [[ "$(cat "$REQ_HASH_FILE")" != "$current_req" ]]; then
@@ -76,7 +71,7 @@ fi
 source "$VENV_DIR/bin/activate"
 
 if [[ "$need_pip" -eq 1 ]]; then
-  echo "==> requirements.txt 有变化，更新 Python 依赖（使用 pip 缓存）"
+  echo "==> requirements.txt 有变化，更新 Python 依赖"
   pip install -r backend/requirements.txt
   echo "$current_req" > "$REQ_HASH_FILE"
 else
@@ -89,7 +84,7 @@ if [[ "$BUILD_ONLY" -eq 0 ]]; then
 fi
 
 if [[ "$need_npm" -eq 1 ]]; then
-  echo "==> package-lock.json 有变化，npm install（使用 npm 缓存）"
+  echo "==> package-lock.json 有变化，npm install"
   cd web
   npm install
   cd ..
@@ -104,19 +99,8 @@ VITE_API_BASE=/api npm run build
 cd ..
 
 if [[ "$BUILD_ONLY" -eq 0 ]]; then
-  if systemctl is-active --quiet student-service 2>/dev/null; then
-    echo "==> 重启 student-service"
-    sudo systemctl restart student-service
-    sudo systemctl status student-service --no-pager || true
-  else
-    echo "WARN: 未检测到 systemd 服务 student-service，请手动重启 uvicorn"
-  fi
-
-  if curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1; then
-    echo "==> 健康检查通过"
-  else
-    echo "WARN: /health 未响应，请检查日志：journalctl -u student-service -n 50"
-  fi
+  restart_backend
+  health_check_backend || true
 fi
 
 echo "==> 完成"

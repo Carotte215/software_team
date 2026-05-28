@@ -1,11 +1,9 @@
 [Unit]
-Description=Student Service Platform (FastAPI) — 系统级单元模板，需 root 安装；无 root 请用 student-service.user.service
-After=network.target postgresql.service
+Description=Student Service Platform (FastAPI, user session)
+After=network.target
 
 [Service]
 Type=simple
-# 系统级安装时改为实际运行用户，例如 User=user
-User=user
 WorkingDirectory=@APP_ROOT@
 EnvironmentFile=@ENV_FILE@
 Environment=PYTHONPATH=@APP_ROOT@/backend
@@ -15,4 +13,4 @@ Restart=always
 RestartSec=3
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

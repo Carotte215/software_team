@@ -58,7 +58,7 @@ Cloud: http://10.10.0.21/
 cd web && VITE_API_BASE=/api npm run build
 ```
 
-云部署详见 [docs/deploy-cloud.md](docs/deploy-cloud.md)。上云前检查见 [docs/pre-deploy-checklist.md](docs/pre-deploy-checklist.md)。验收清单见 [docs/acceptance-checklist.md](docs/acceptance-checklist.md)。
+云部署详见 [docs/deploy-cloud.md](docs/deploy-cloud.md)。**无 root 账号**见 [docs/deploy-user-account.md](docs/deploy-user-account.md)。上云更新见 [docs/cloud-update-safe.md](docs/cloud-update-safe.md)。
 
 前端当前默认连接真实后端 `Remote + /api`，不再把 Mock 作为主测试入口。
 
