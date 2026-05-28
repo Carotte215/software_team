@@ -1,12 +1,9 @@
-import json
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.db.session import get_db
 from app.deps import CurrentSession, get_current_session
 from app.models import PartyProgress, PartyStage, PartyTimelineRule, Student
@@ -30,7 +27,7 @@ def progress(db: Session = Depends(get_db), session: CurrentSession = Depends(ge
     row = db.get(PartyProgress, session.student_id)
     if not row:
         raise HTTPException(status_code=404, detail="party progress not found")
-    return {"flowName": "入党流程", "stages": load_party_stages(db), "timelineRules": timeline_rules(), **party(row)}
+    return {"flowName": "入党流程", "stages": load_party_stages(db), "timelineRules": timeline_rules(db), **party(row)}
 
 
 @router.get("/workbench/party/progress")
@@ -103,7 +100,7 @@ def update_party_stages(payload: dict, db: Session = Depends(get_db), session: C
 def get_timeline(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
     if session.role not in {"teacher", "leader"}:
         raise HTTPException(status_code=403, detail="forbidden")
-    return {"stages": load_party_stages(db), "rules": timeline_rules()}
+    return {"stages": load_party_stages(db), "rules": timeline_rules(db)}
 
 
 @router.put("/workbench/party/timeline")
@@ -142,63 +139,31 @@ def run_party_reminders(db: Session, session: CurrentSession) -> dict:
     return {"ok": True, "students": len(rows), "changed": changed}
 
 
-def timeline_path() -> Path:
-    path = Path(get_settings().upload_dir).parent / "party_timeline.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def timeline_rules() -> list[dict]:
-    from sqlalchemy import select
-
-    from app.db.session import SessionLocal
-    from app.models import PartyTimelineRule
-
-    db = SessionLocal()
-    try:
-        rows = db.scalars(select(PartyTimelineRule)).all()
-        if rows:
-            return normalize_timeline_rules(
-                [
-                    {
-                        "stageKey": row.stage_key,
-                        "durationDays": row.duration_days,
-                        "remindBeforeDays": row.remind_before_days,
-                        "material": row.material,
-                    }
-                    for row in rows
-                ],
-            )
-        path = timeline_path()
-        if path.exists():
-            try:
-                legacy = normalize_timeline_rules(json.loads(path.read_text(encoding="utf-8")))
-                for item in legacy:
-                    db.merge(
-                        PartyTimelineRule(
-                            stage_key=item["stageKey"],
-                            duration_days=item["durationDays"],
-                            remind_before_days=item["remindBeforeDays"],
-                            material=item["material"],
-                        ),
-                    )
-                db.commit()
-                return legacy
-            except (OSError, json.JSONDecodeError):
-                pass
-        for item in DEFAULT_TIMELINE_RULES:
-            db.merge(
-                PartyTimelineRule(
-                    stage_key=item["stageKey"],
-                    duration_days=item["durationDays"],
-                    remind_before_days=item["remindBeforeDays"],
-                    material=item["material"],
-                ),
-            )
-        db.commit()
-        return DEFAULT_TIMELINE_RULES
-    finally:
-        db.close()
+def timeline_rules(db: Session) -> list[dict]:
+    rows = db.scalars(select(PartyTimelineRule)).all()
+    if rows:
+        return normalize_timeline_rules(
+            [
+                {
+                    "stageKey": row.stage_key,
+                    "durationDays": row.duration_days,
+                    "remindBeforeDays": row.remind_before_days,
+                    "material": row.material,
+                }
+                for row in rows
+            ],
+        )
+    for item in DEFAULT_TIMELINE_RULES:
+        db.merge(
+            PartyTimelineRule(
+                stage_key=item["stageKey"],
+                duration_days=item["durationDays"],
+                remind_before_days=item["remindBeforeDays"],
+                material=item["material"],
+            ),
+        )
+    db.commit()
+    return DEFAULT_TIMELINE_RULES
 
 
 def normalize_timeline_rules(rules: list[dict]) -> list[dict]:
@@ -218,7 +183,8 @@ def normalize_timeline_rules(rules: list[dict]) -> list[dict]:
 
 
 def ensure_timeline_task(row: PartyProgress) -> bool:
-    rule = next((item for item in timeline_rules() if item["stageKey"] == row.current_key), None)
+    db = Session.object_session(row)
+    rule = next((item for item in timeline_rules(db) if item["stageKey"] == row.current_key), None) if db else None
     if not rule or rule["durationDays"] <= 0:
         return False
     start_at = current_stage_start(row)

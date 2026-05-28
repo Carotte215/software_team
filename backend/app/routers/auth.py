@@ -22,10 +22,12 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> dict:
     student = db.get(Student, payload.student_id)
     if not student:
         raise HTTPException(status_code=401, detail="unknown identity")
-    if payload.role not in VALID_ROLES:
-        raise HTTPException(status_code=400, detail="invalid role")
     if not payload.password:
         raise HTTPException(status_code=401, detail="password required")
+
+    role = (student.role or STUDENT).strip() or STUDENT
+    if role not in VALID_ROLES:
+        raise HTTPException(status_code=500, detail="account role invalid")
 
     if student.password_hash:
         if not verify_password(payload.password, student.password_hash):
@@ -38,20 +40,20 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> dict:
         if payload.password != expected:
             raise HTTPException(status_code=401, detail="invalid credential")
 
-    token = issue_token(payload.student_id, payload.role)
+    token = issue_token(payload.student_id, role)
     audit(
         db,
-        CurrentSession(student_id=payload.student_id, role=payload.role, token=token),
+        CurrentSession(student_id=payload.student_id, role=role, token=token),
         "auth_login",
         payload.student_id,
-        {"role": payload.role},
+        {"role": role},
     )
     db.commit()
     return {
         "token": token,
         "studentId": payload.student_id,
-        "role": payload.role,
-        "student": student_public(student, payload.role),
+        "role": role,
+        "student": student_public(student, role),
         "expiresInHours": get_settings().auth_token_hours,
     }
 
@@ -108,10 +110,13 @@ def refresh_token(db: Session = Depends(get_db), session: CurrentSession = Depen
     student = db.get(Student, session.student_id)
     if not student:
         raise HTTPException(status_code=404, detail="student not found")
-    token = issue_token(session.student_id, session.role)
+    role = (student.role or STUDENT).strip() or STUDENT
+    if role not in VALID_ROLES:
+        raise HTTPException(status_code=500, detail="account role invalid")
+    token = issue_token(session.student_id, role)
     return {
         "token": token,
         "studentId": session.student_id,
-        "role": session.role,
+        "role": role,
         "expiresInHours": get_settings().auth_token_hours,
     }

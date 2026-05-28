@@ -37,15 +37,23 @@ function saveBlob(blob, name) {
 }
 
 async function downloadTemplate(item) {
-  const blob = await api.downloadTemplate(item);
-  saveBlob(blob, `${item.name}.${item.format || "txt"}`);
-  toast("模板下载已开始");
+  try {
+    const blob = await api.downloadTemplate(item);
+    saveBlob(blob, `${item.name}.${item.format || "txt"}`);
+    toast("模板下载已开始");
+  } catch (error) {
+    toast(error.message || "模板暂未上传，请联系管理员先维护模板文件");
+  }
 }
 
 async function downloadAttachment(file) {
-  const blob = await api.downloadFile(file);
-  saveBlob(blob, file.name || "policy-attachment");
-  toast("附件下载已开始");
+  try {
+    const blob = await api.downloadFile(file);
+    saveBlob(blob, file.name || "policy-attachment");
+    toast("附件下载已开始");
+  } catch (error) {
+    toast(error.message || "附件下载失败");
+  }
 }
 
 async function previewAttachment(file) {

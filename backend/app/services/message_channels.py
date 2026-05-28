@@ -1,4 +1,4 @@
-"""通知多渠道分发：站内真实投递；邮件 SMTP 可配置；短信仅模拟记录（需求 FR3-6a）。"""
+"""通知多渠道分发：当前测试版本仅默认启用站内真实投递。"""
 
 from __future__ import annotations
 
@@ -62,15 +62,16 @@ def dispatch_notice(
     batch_id: str,
     targets: list[Student],
     *,
-    enable_email: bool = True,
-    enable_sms_sim: bool = True,
+    enable_email: bool = False,
+    enable_sms_sim: bool = False,
 ) -> list[dict]:
     stats = {
         "站内": {"sendOk": 0, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "observability": "可读"},
-        "邮件": {"sendOk": 0, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "observability": "不可观测" if not smtp_enabled() else "可读"},
-        "短信": {"sendOk": 0, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "observability": "发送记录"},
-        "微信": {"sendOk": 0, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "observability": "不可观测"},
     }
+    if enable_email:
+        stats["邮件"] = {"sendOk": 0, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "observability": "不可观测" if not smtp_enabled() else "可读"}
+    if enable_sms_sim:
+        stats["短信"] = {"sendOk": 0, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "observability": "发送记录"}
 
     for student in targets:
         channel_states: list[dict] = []
@@ -128,7 +129,4 @@ def dispatch_notice(
 def empty_scheduled_channels(count: int) -> list[dict]:
     return [
         {"name": "站内", "sendOk": 0, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "target": count, "observability": "待发送"},
-        {"name": "邮件", "sendOk": 0, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "target": count, "observability": "待发送"},
-        {"name": "短信", "sendOk": 0, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "target": count, "observability": "待发送"},
-        {"name": "微信", "sendOk": 0, "sendFail": 0, "deliverOk": 0, "deliverFail": 0, "read": 0, "target": count, "observability": "不可观测"},
     ]

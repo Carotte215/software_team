@@ -1,17 +1,16 @@
-import { ROLES } from "../data/seed.js";
-
 const KEY = "ss_web_session_v1";
+const DEFAULT_SESSION = { studentId: "", role: "student", token: "" };
 
-export function getSession(db) {
+export function getSession() {
   const saved = JSON.parse(localStorage.getItem(KEY) || "null");
-  if (saved && saved.studentId) return saved;
-  const first = db.students[0];
-  const session = { studentId: first?.studentId || "", role: ROLES.STUDENT, token: "web-mock" };
-  setSession(session);
-  return session;
+  if (saved?.studentId || saved?.token) {
+    return { ...DEFAULT_SESSION, ...saved };
+  }
+  setSession(DEFAULT_SESSION);
+  return { ...DEFAULT_SESSION };
 }
 
 export function setSession(session) {
-  localStorage.setItem(KEY, JSON.stringify(session));
+  localStorage.setItem(KEY, JSON.stringify({ ...DEFAULT_SESSION, ...(session || {}) }));
   window.dispatchEvent(new CustomEvent("sessionchange"));
 }

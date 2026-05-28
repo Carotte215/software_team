@@ -1,5 +1,6 @@
 <script setup>
 import { inject, onMounted, ref } from "vue";
+import EmptyStateCard from "../components/EmptyStateCard.vue";
 import { formatTime } from "../utils.js";
 
 const api = inject("api");
@@ -7,22 +8,34 @@ const toast = inject("toast");
 const notices = ref([]);
 const messages = ref([]);
 const expandedNotice = ref(null);
+const loadError = ref("");
 
 onMounted(load);
 
 async function load() {
-  const [noticeRes, inboxRes] = await Promise.all([
-    api.listNotices(),
-    api.getInbox(),
-  ]);
-  notices.value = noticeRes.list || [];
-  messages.value = inboxRes.list || [];
+  try {
+    const [noticeRes, inboxRes] = await Promise.all([
+      api.listNotices(),
+      api.getInbox(),
+    ]);
+    notices.value = noticeRes.list || [];
+    messages.value = inboxRes.list || [];
+    loadError.value = "";
+  } catch (error) {
+    notices.value = [];
+    messages.value = [];
+    loadError.value = error.message || "通知加载失败";
+  }
 }
 
 async function markRead(id) {
-  await api.markMessageRead(id);
-  toast("已标记已读");
-  await load();
+  try {
+    await api.markMessageRead(id);
+    toast("已标记已读");
+    await load();
+  } catch (error) {
+    toast(error.message || "标记已读失败");
+  }
 }
 
 function toggleNotice(item) {
@@ -31,6 +44,7 @@ function toggleNotice(item) {
 </script>
 
 <template>
+  <div v-if="loadError" class="card">{{ loadError }}</div>
   <div class="grid cols-2">
     <section>
       <div class="section-title">通知公告</div>
@@ -48,6 +62,7 @@ function toggleNotice(item) {
           <button @click="toggleNotice(item)">{{ expandedNotice?.id === item.id ? "收起" : "全文" }}</button>
           <p v-if="expandedNotice?.id === item.id" class="muted" style="white-space:pre-wrap">{{ item.content }}</p>
         </article>
+        <EmptyStateCard v-if="!notices.length" text="暂无通知公告" />
       </div>
     </section>
 
@@ -66,6 +81,7 @@ function toggleNotice(item) {
           </p>
           <button @click="markRead(msg.id)" :disabled="Boolean(msg.readAt)">标记已读</button>
         </div>
+        <EmptyStateCard v-if="!messages.length" text="暂无站内信" />
       </div>
     </section>
   </div>

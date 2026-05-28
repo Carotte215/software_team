@@ -1,5 +1,6 @@
 <script setup>
 import { computed, inject, onMounted, ref } from "vue";
+import EmptyStateCard from "../components/EmptyStateCard.vue";
 import { formatTime } from "../utils.js";
 
 const api = inject("api");
@@ -8,6 +9,7 @@ const flow = ref(null);
 const theory = ref({ list: [] });
 const theoryAnswers = ref({});
 const theoryResult = ref(null);
+const loadError = ref("");
 
 const current = computed(() => {
   if (!flow.value) return null;
@@ -21,14 +23,25 @@ const currentRule = computed(() => {
 onMounted(load);
 
 async function load() {
-  flow.value = await api.getPartyProgress();
-  theory.value = await api.listTheoryQuestions().catch(() => ({ list: [] }));
+  try {
+    flow.value = await api.getPartyProgress();
+    theory.value = await api.listTheoryQuestions().catch(() => ({ list: [] }));
+    loadError.value = "";
+  } catch (error) {
+    flow.value = null;
+    theory.value = { list: [] };
+    loadError.value = error.message || "党团数据加载失败";
+  }
 }
 
 async function markDone(taskId) {
-  await api.completePartyTask(taskId);
-  toast("已记录完成");
-  await load();
+  try {
+    await api.completePartyTask(taskId);
+    toast("已记录完成");
+    await load();
+  } catch (error) {
+    toast(error.message || "任务完成记录失败");
+  }
 }
 
 async function submitTheory() {
@@ -44,6 +57,7 @@ async function submitTheory() {
 </script>
 
 <template>
+  <div v-if="loadError" class="card">{{ loadError }}</div>
   <template v-if="flow">
     <div class="card">
       <h3>{{ flow.flowName }}</h3>
@@ -83,7 +97,7 @@ async function submitTheory() {
               {{ task.done ? "已完成" : "标记完成" }}
             </button>
           </div>
-          <div v-if="!flow.tasks.length" class="empty card">暂无待办</div>
+          <EmptyStateCard v-if="!flow.tasks.length" text="暂无待办" />
         </div>
 
         <div class="section-title">历史节点</div>
@@ -92,6 +106,7 @@ async function submitTheory() {
             <strong>{{ flow.stages.find((s) => s.key === row.stageKey)?.name || row.stageKey }}</strong>
             <div class="muted">{{ formatTime(row.at) }} · {{ row.remark }}</div>
           </div>
+          <EmptyStateCard v-if="!flow.history?.length" text="暂无历史节点" />
         </div>
       </section>
     </div>
@@ -112,6 +127,7 @@ async function submitTheory() {
             </label>
           </div>
         </article>
+        <EmptyStateCard v-if="!theory.list.length" text="暂无可用理论题目" />
         <button class="primary" :disabled="!theory.list.length">提交自测</button>
       </form>
       <div v-if="theoryResult" class="stack">

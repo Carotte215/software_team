@@ -5,6 +5,7 @@ from sqlalchemy.engine import Engine
 
 from app.models import Student
 from app.services.passwords import default_initial_password, hash_password
+from app.services.seed_data import STUDENTS
 
 
 def ensure_schema(engine: Engine) -> None:
@@ -14,6 +15,7 @@ def ensure_schema(engine: Engine) -> None:
         if "students" in tables:
             cols = {col["name"] for col in inspector.get_columns("students")}
             for col, ddl in (
+                ("role", "ALTER TABLE students ADD COLUMN role VARCHAR(32) DEFAULT 'student'"),
                 ("password_hash", "ALTER TABLE students ADD COLUMN password_hash VARCHAR(255) DEFAULT ''"),
                 ("id_card_encrypted", "ALTER TABLE students ADD COLUMN id_card_encrypted VARCHAR(512) DEFAULT ''"),
                 ("email", "ALTER TABLE students ADD COLUMN email VARCHAR(128) DEFAULT ''"),
@@ -61,19 +63,30 @@ def ensure_schema(engine: Engine) -> None:
         ):
             conn.execute(text(ddl))
 
-    backfill_password_hashes(engine)
+    backfill_student_defaults(engine)
 
 
-def backfill_password_hashes(engine: Engine) -> None:
+def backfill_student_defaults(engine: Engine) -> None:
     from sqlalchemy.orm import Session
 
+    seeded_roles = {sid: role for sid, role, *_ in STUDENTS}
+
     with Session(engine) as db:
-        rows = db.scalars(select(Student).where(Student.password_hash == "")).all()
-        if not rows:
-            return
+        changed = False
+        rows = db.scalars(select(Student)).all()
         for row in rows:
-            row.password_hash = hash_password(default_initial_password(row.student_id))
-        db.commit()
+            role = (row.role or "").strip()
+            if row.student_id in seeded_roles and role in {"", "student"}:
+                row.role = seeded_roles[row.student_id]
+                changed = True
+            elif not role:
+                row.role = "student"
+                changed = True
+            if row.password_hash == "":
+                row.password_hash = hash_password(default_initial_password(row.student_id))
+                changed = True
+        if changed:
+            db.commit()
 
 
 def main() -> None:

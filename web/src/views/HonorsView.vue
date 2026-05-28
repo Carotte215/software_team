@@ -24,9 +24,13 @@ function saveBlob(blob, name) {
 }
 
 async function downloadAttachment(file) {
-  const blob = await api.downloadFile(file);
-  saveBlob(blob, file.name || "honor-attachment");
-  toast("证明材料下载已开始");
+  try {
+    const blob = await api.downloadFile(file);
+    saveBlob(blob, file.name || "honor-attachment");
+    toast("证明材料下载已开始");
+  } catch (error) {
+    toast(error.message || "证明材料下载失败");
+  }
 }
 </script>
 

@@ -13,6 +13,7 @@ from app.models import Application, Student
 from app.routers.application_templates import find_template
 from app.schemas import ApplicationCreate, ApplicationDecision
 from app.services.common import audit, now_ms, uid
+from app.services.file_storage import attachment_file_ids, cleanup_orphan_files
 from app.services.permissions import COORDINATOR, LEADER, TEACHER, require_roles, scoped_student_ids
 from app.services.serializers import application
 
@@ -64,6 +65,7 @@ def save_draft(payload: ApplicationCreate, db: Session = Depends(get_db), sessio
         .where(Application.student_id == session.student_id, Application.status == STATUS_DRAFT)
         .order_by(Application.updated_at.desc()),
     ).first()
+    old_file_ids = attachment_file_ids(row.attachments) if row else set()
     if row:
         row.type = payload.type
         row.subtype = payload.subtype
@@ -84,6 +86,8 @@ def save_draft(payload: ApplicationCreate, db: Session = Depends(get_db), sessio
         db.add(row)
     audit(db, session, "application_draft_save", row.id)
     db.commit()
+    if old_file_ids:
+        cleanup_orphan_files(db, old_file_ids - attachment_file_ids(row.attachments))
     return application(row)
 
 
@@ -118,7 +122,9 @@ def create_application(payload: ApplicationCreate, db: Session = Depends(get_db)
     draft_rows = db.scalars(
         select(Application).where(Application.student_id == session.student_id, Application.status == STATUS_DRAFT),
     ).all()
+    orphan_candidates = set()
     for draft in draft_rows:
+        orphan_candidates.update(attachment_file_ids(draft.attachments))
         db.delete(draft)
     row = Application(
         id=uid("app"),
@@ -136,6 +142,7 @@ def create_application(payload: ApplicationCreate, db: Session = Depends(get_db)
     db.add(row)
     audit(db, session, "application_create", row.id)
     db.commit()
+    cleanup_orphan_files(db, orphan_candidates - attachment_file_ids(row.attachments))
     return application(row)
 
 
@@ -144,9 +151,14 @@ def get_application(app_id: str, db: Session = Depends(get_db), session: Current
     row = db.get(Application, app_id)
     if not row:
         raise HTTPException(status_code=404, detail="application not found")
-    if row.student_id != session.student_id and session.role not in {"teacher", "leader", "coordinator"}:
+    if row.student_id == session.student_id or session.role in {"teacher", "leader"}:
+        return application(row)
+    if session.role == COORDINATOR:
+        scope_ids = set(db.scalars(scoped_student_ids(db, session)).all())
+        if row.student_id in scope_ids:
+            return application(row)
         raise HTTPException(status_code=403, detail="forbidden")
-    return application(row)
+    raise HTTPException(status_code=403, detail="forbidden")
 
 
 @router.get("/applications/{app_id}/document")
@@ -159,8 +171,12 @@ def application_document(
     row = db.get(Application, app_id)
     if not row:
         raise HTTPException(status_code=404, detail="application not found")
-    if row.student_id != session.student_id and session.role not in {"teacher", "leader"}:
+    if row.student_id != session.student_id and session.role not in {"teacher", "leader", "coordinator"}:
         raise HTTPException(status_code=403, detail="forbidden")
+    if session.role == COORDINATOR:
+        scope_ids = set(db.scalars(scoped_student_ids(db, session)).all())
+        if row.student_id not in scope_ids:
+            raise HTTPException(status_code=403, detail="forbidden")
     student = db.get(Student, row.student_id)
     if not student:
         raise HTTPException(status_code=404, detail="student not found")
@@ -199,6 +215,7 @@ def submit_existing_application(
         raise HTTPException(status_code=400, detail="invalid state")
     if payload.type == "盖章申请" and not payload.attachments:
         raise HTTPException(status_code=400, detail="盖章申请须上传附件")
+    old_file_ids = attachment_file_ids(row.attachments)
     previous_status = row.status
     row.type = payload.type
     row.subtype = payload.subtype
@@ -214,6 +231,7 @@ def submit_existing_application(
     ]
     audit(db, session, "application_resubmit" if previous_status == STATUS_REJECTED else "application_submit", row.id)
     db.commit()
+    cleanup_orphan_files(db, old_file_ids - attachment_file_ids(row.attachments))
     return application(row)
 
 

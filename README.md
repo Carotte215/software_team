@@ -10,10 +10,15 @@
 
 ## 登录
 
-生产环境使用 **学号 + 个人密码 + 角色** 登录（JWT）。
+当前测试版本使用 **学号 + 个人密码** 登录（JWT），角色由后端按账号绑定返回，前端不再允许手工选择角色。
 
 - 种子数据初始密码：`Stu@` + 学号后 6 位
 - 管理老师可在工作台重置学生密码
+- 本地最小测试账号：
+  - `2024201581`：学生
+  - `2023200444`：三级协同管理者
+  - `2022200999`：管理老师
+  - `2024210888`：学院领导
 
 ## 快速启动（本地）
 
@@ -53,9 +58,9 @@ Cloud: http://10.10.0.21/
 cd web && VITE_API_BASE=/api npm run build
 ```
 
-云部署详见 [docs/deploy-cloud.md](docs/deploy-cloud.md)。**新手 SSH + 更新**见 [docs/ssh-and-deploy-beginner.md](docs/ssh-and-deploy-beginner.md)。验收清单见 [docs/acceptance-checklist.md](docs/acceptance-checklist.md)。
+云部署详见 [docs/deploy-cloud.md](docs/deploy-cloud.md)。上云前检查见 [docs/pre-deploy-checklist.md](docs/pre-deploy-checklist.md)。验收清单见 [docs/acceptance-checklist.md](docs/acceptance-checklist.md)。
 
-前端开发环境可在右上角切换 Mock/Remote。生产包默认 Remote + `/api`。
+前端当前默认连接真实后端 `Remote + /api`，不再把 Mock 作为主测试入口。
 
 ## 已实现能力（相对 V3.0）
 
@@ -93,12 +98,12 @@ cd web && VITE_API_BASE=/api npm run build
 
 | 层级 | 路径 | 说明 |
 | --- | --- | --- |
-| 应用壳 | `web/src/App.vue` | 路由分发、会话切换、API 模式切换。 |
+| 应用壳 | `web/src/App.vue` | 路由分发、登录会话与导航。 |
 | 页面 | `web/src/views/` | 每个业务页面一个 Vue 组件。 |
 | API 门面 | `web/src/services/api.js` | 聚合各业务 API，保持页面调用统一。 |
 | API 模块 | `web/src/services/modules/` | 按学生、知识库、党团、审批等业务域拆分。 |
-| 请求层 | `web/src/api/client.js` | 统一处理 Mock/Remote、Header、Token、Blob。 |
-| Mock 网关 | `web/src/api/mockGateway.js` | 本地演示数据和接口模拟。 |
+| 请求层 | `web/src/api/client.js` | 统一处理真实后端请求、Token、Blob。 |
+| Mock 网关 | `web/src/api/mockGateway.js` | 仅保留开发兼容，不作为默认互测入口。 |
 | 状态 | `web/src/state/` | 会话与路由状态。 |
 
 ## 统一接口约定
@@ -108,7 +113,7 @@ cd web && VITE_API_BASE=/api npm run build
 新增前端接口时按这个顺序：
 
 1. 在 `web/src/services/modules/<domain>.js` 增加方法。
-2. 如需本地演示，在 `web/src/api/mockGateway.js` 增加同路径 mock。
+2. 如需补离线兼容，再在 `web/src/api/mockGateway.js` 增加同路径 mock。
 3. 后端在对应 `backend/app/routers/<domain>.py` 增加路由。
 4. 页面组件只通过 `api.xxx()` 调用。
 
@@ -141,9 +146,9 @@ cd web && npm run build
 
 前端调试：
 
-- `Mock` 模式：确认页面逻辑和交互，不依赖数据库。
-- `Remote` 模式：确认 FastAPI 接口、权限和数据。
+- 默认走 `Remote`：确认 FastAPI 接口、权限和数据。
 - 浏览器 DevTools 的 Network 面板可直接查看请求路径和响应。
+- 若模板下载返回“template file not uploaded”，表示需先在工作台上传真实模板文件后再测试下载链路。
 
 ## 数据与本地文件
 

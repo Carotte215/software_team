@@ -11,7 +11,6 @@ class SessionInfo(BaseModel):
 
 class LoginRequest(BaseModel):
     student_id: str = Field(alias="studentId")
-    role: str = "student"
     password: str = ""
 
 

@@ -7,6 +7,7 @@ from app.deps import CurrentSession, get_current_session
 from app.models import TemplateFile
 from app.schemas import TemplateFileCreate, TemplateFileUpdate
 from app.services.common import audit, uid
+from app.services.file_storage import cleanup_orphan_files
 from app.services.permissions import COORDINATOR, TEACHER, require_roles
 from app.services.serializers import template
 
@@ -52,6 +53,7 @@ def update_template(
     row = db.get(TemplateFile, template_id)
     if not row:
         raise HTTPException(status_code=404, detail="template not found")
+    old_file_id = row.file_id
     row.name = payload.name
     row.scene = payload.scene
     row.format = payload.format
@@ -59,6 +61,7 @@ def update_template(
     row.file_id = payload.file_id
     audit(db, session, "template_update", template_id)
     db.commit()
+    cleanup_orphan_files(db, {old_file_id} if old_file_id and old_file_id != row.file_id else set())
     return template(row)
 
 
@@ -72,7 +75,9 @@ def delete_template(
     row = db.get(TemplateFile, template_id)
     if not row:
         raise HTTPException(status_code=404, detail="template not found")
+    file_id = row.file_id
     db.delete(row)
     audit(db, session, "template_delete", template_id)
     db.commit()
+    cleanup_orphan_files(db, {file_id} if file_id else set())
     return {"ok": True}

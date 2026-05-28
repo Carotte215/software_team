@@ -1,7 +1,5 @@
 import json
 from datetime import datetime, timezone
-from pathlib import Path
-from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -13,16 +11,12 @@ from app.deps import CurrentSession, get_current_session
 from app.models import TemplateFile
 from app.services.common import audit, uid
 from app.services.file_access import assert_file_access
+from app.services.file_storage import data_path, meta_path, storage_root
 
 router = APIRouter(tags=["files"])
 
 BLOCKED_SUFFIXES = {".exe", ".bat", ".cmd", ".sh", ".js", ".msi"}
-
-
-def storage_root() -> Path:
-    root = Path(get_settings().upload_dir)
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+ALLOWED_BUSINESSES = {"general", "knowledge", "honor", "application", "template"}
 
 
 def safe_suffix(filename: str) -> str:
@@ -32,14 +26,6 @@ def safe_suffix(filename: str) -> str:
     return suffix
 
 
-def meta_path(file_id: str) -> Path:
-    return storage_root() / f"{file_id}.json"
-
-
-def data_path(file_id: str, suffix: str) -> Path:
-    return storage_root() / f"{file_id}{suffix}"
-
-
 @router.post("/files/upload")
 async def upload_file(
     file: UploadFile = File(...),
@@ -47,6 +33,8 @@ async def upload_file(
     db: Session = Depends(get_db),
     session: CurrentSession = Depends(get_current_session),
 ) -> dict:
+    if business not in ALLOWED_BUSINESSES:
+        raise HTTPException(status_code=400, detail="unsupported business type")
     suffix = safe_suffix(file.filename or "")
     file_id = uid("file")
     target = data_path(file_id, suffix)
@@ -94,6 +82,8 @@ def download_file(
     target = data_path(file_id, meta.get("suffix", ""))
     if not target.exists():
         raise HTTPException(status_code=404, detail="file not found")
+    audit(db, session, "file_download", file_id, {"business": meta.get("business", "general")})
+    db.commit()
     return FileResponse(target, media_type=meta.get("contentType") or "application/octet-stream", filename=meta.get("name") or target.name)
 
 
@@ -128,6 +118,8 @@ def preview_file(
     if not target.exists():
         raise HTTPException(status_code=404, detail="file not found")
     media_type = PREVIEW_TYPES[suffix]
+    audit(db, session, "file_preview", file_id, {"business": meta.get("business", "general")})
+    db.commit()
     return FileResponse(target, media_type=media_type, filename=meta.get("name") or target.name)
 
 
@@ -136,29 +128,19 @@ def download_template(template_id: str, db: Session = Depends(get_db), session: 
     row = db.get(TemplateFile, template_id)
     if not row:
         raise HTTPException(status_code=404, detail="template not found")
-    if row.file_id:
-        meta_file = meta_path(row.file_id)
-        if meta_file.exists():
-            meta = json.loads(meta_file.read_text(encoding="utf-8"))
-            target = data_path(row.file_id, meta.get("suffix", ""))
-            if target.exists():
-                audit(db, session, "template_download", template_id)
-                db.commit()
-                return FileResponse(
-                    target,
-                    media_type=meta.get("contentType") or "application/octet-stream",
-                    filename=meta.get("name") or row.name,
-                )
-    body = (
-        f"{row.name}\n\n"
-        f"适用场景：{row.scene or '通用'}\n"
-        "本文件由学院学生综合服务与党团管理平台生成，请结合学院发布的正式材料要求使用。\n"
-    )
+    if not row.file_id:
+        raise HTTPException(status_code=409, detail="template file not uploaded")
+    meta_file = meta_path(row.file_id)
+    if not meta_file.exists():
+        raise HTTPException(status_code=409, detail="template metadata missing")
+    meta = json.loads(meta_file.read_text(encoding="utf-8"))
+    target = data_path(row.file_id, meta.get("suffix", ""))
+    if not target.exists():
+        raise HTTPException(status_code=409, detail="template file missing")
     audit(db, session, "template_download", template_id)
     db.commit()
-    filename = f"{row.name}.{row.format or 'txt'}"
-    return Response(
-        body.encode("utf-8"),
-        media_type="application/octet-stream",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    return FileResponse(
+        target,
+        media_type=meta.get("contentType") or "application/octet-stream",
+        filename=meta.get("name") or row.name,
     )

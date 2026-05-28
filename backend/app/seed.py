@@ -44,10 +44,11 @@ def seed() -> None:
             db.merge(PartyStage(stage_key=item["key"], name=item["name"], desc=item["desc"], sort_order=item["order"]))
 
         plan_keys: set[str] = set()
-        for sid, name, grade, major, class_name, nation, phone, political, tutor, hometown in STUDENTS:
+        for sid, role, name, grade, major, class_name, nation, phone, political, tutor, hometown in STUDENTS:
             db.add(
                 Student(
                     student_id=sid,
+                    role=role,
                     name=name,
                     grade=grade,
                     major=major,

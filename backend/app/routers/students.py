@@ -20,6 +20,7 @@ router = APIRouter(tags=["students"])
 
 FIELD_ALIASES = {
     "studentId": ["studentId", "student_id", "学号"],
+    "role": ["role", "角色"],
     "name": ["name", "姓名"],
     "grade": ["grade", "年级"],
     "major": ["major", "专业"],
@@ -33,6 +34,7 @@ FIELD_ALIASES = {
     "idCard": ["idCard", "id_card", "身份证号", "身份证"],
 }
 REQUIRED_FIELDS = ["studentId", "name", "grade", "major", "className"]
+VALID_IMPORT_ROLES = {"student", "teacher", "coordinator", "leader"}
 FIELD_POLICY = {
     "teacher": {
         "visible": ["studentId", "name", "grade", "major", "className", "nation", "phone", "politicalStatus", "tutor", "hometown", "idCardMasked", "extension"],
@@ -230,6 +232,7 @@ async def import_students(
             db.add(
                 Student(
                     student_id=item["studentId"],
+                    role=item.get("role") or "student",
                     name=item["name"],
                     grade=item["grade"],
                     major=item["major"],
@@ -303,6 +306,9 @@ def validate_student_rows(db: Session, rows: list[dict], overwrite: bool) -> dic
         if db.get(Student, data["studentId"]) and not overwrite:
             errors.append({"row": line, "field": "studentId", "message": "学号已存在，需勾选覆盖更新"})
             continue
+        if data.get("role") and data["role"] not in VALID_IMPORT_ROLES:
+            errors.append({"row": line, "field": "role", "message": "角色必须是 student/teacher/coordinator/leader"})
+            continue
         valid_rows.append(data)
     existing_ids = {item["studentId"] for item in valid_rows if db.get(Student, item["studentId"])}
     return {
@@ -316,6 +322,8 @@ def validate_student_rows(db: Session, rows: list[dict], overwrite: bool) -> dic
 
 
 def apply_student(row: Student, data: dict) -> None:
+    if data.get("role"):
+        row.role = data["role"]
     row.name = data["name"]
     row.grade = data["grade"]
     row.major = data["major"]

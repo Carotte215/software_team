@@ -2,7 +2,7 @@ import { mockRequest, mockRequestBlob } from "./mockGateway.js";
 
 const isProd = import.meta.env.PROD;
 const defaultBase = import.meta.env.VITE_API_BASE || (isProd ? "/api" : "http://127.0.0.1:8000/api");
-const defaultMode = isProd ? "remote" : localStorage.getItem("ss_web_api_mode") || "mock";
+const defaultMode = "remote";
 
 const config = {
   mode: defaultMode,
@@ -45,13 +45,21 @@ function authHeaders(session, includeJson = true) {
     ...(includeJson ? { "Content-Type": "application/json" } : {}),
     Authorization: session?.token ? `Bearer ${session.token}` : "",
     "X-Student-Id": session?.studentId || "",
-    "X-Role": session?.role || "student",
+    "X-Role": session?.role || "",
   };
 }
 
 function handleUnauthorized() {
   if (config.mode !== "remote") return;
   window.dispatchEvent(new CustomEvent("authrequired"));
+}
+
+async function readErrorMessage(res, fallback) {
+  const body = await res.json().catch(() => null);
+  if (!body) return fallback;
+  if (typeof body.detail === "string") return body.detail;
+  if (typeof body.message === "string") return body.message;
+  return fallback;
 }
 
 export async function request({ path, method = "GET", data = {}, session }) {
@@ -74,7 +82,7 @@ export async function request({ path, method = "GET", data = {}, session }) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || "请求过于频繁");
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, `HTTP ${res.status}`));
   return res.json();
 }
 
@@ -90,6 +98,6 @@ export async function requestBlob({ path, data = {}, session }) {
     handleUnauthorized();
     throw new Error("HTTP 401");
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, `HTTP ${res.status}`));
   return res.blob();
 }

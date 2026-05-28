@@ -47,14 +47,19 @@ def parse_transcript_pdf(raw: bytes, plan_modules: list[dict] | None = None) -> 
                         if row and any(cell and str(cell).strip() for cell in row):
                             table_rows.append([str(c or "").strip() for c in row])
 
-        text = "\n".join(text_parts)
+        text = normalize_text("\n".join(text_parts))
         courses = parse_courses_from_tables(table_rows)
+        parse_source = "table"
         if not courses:
             courses = parse_courses_from_text(text)
+            parse_source = "text"
         if not courses:
             ocr_text = try_ocr_text(raw)
             if ocr_text:
-                courses = parse_courses_from_text(ocr_text)
+                courses = parse_courses_from_text(normalize_text(ocr_text))
+                parse_source = "ocr"
+
+        courses = deduplicate_courses(courses)
 
         if not courses:
             return {
@@ -62,14 +67,22 @@ def parse_transcript_pdf(raw: bytes, plan_modules: list[dict] | None = None) -> 
                 "message": "未能识别课程行。请使用文本版 PDF，或安装 Tesseract/pdf2image 后重试 OCR，也可手动维护学分",
                 "courses": [],
                 "modules": [],
+                "warnings": ["当前文件可能是扫描版、导出格式过于复杂，或课程表格文字无法被直接提取。"],
             }
 
         module_totals = aggregate_modules(courses, plan_modules or [])
+        warnings = []
+        if not plan_modules:
+            warnings.append("当前未匹配到培养方案，只能先按课程类别粗略汇总学分。")
+        if parse_source == "ocr":
+            warnings.append("当前结果来自 OCR 识别，请重点核对课程名称和学分。")
         return {
             "ok": True,
-            "message": f"已识别 {len(courses)} 门课程，请核对后保存",
+            "message": f"已通过{parse_source.upper()}识别 {len(courses)} 门课程，请核对后保存",
             "courses": courses,
             "modules": module_totals,
+            "parseSource": parse_source,
+            "warnings": warnings,
         }
     except Exception as exc:
         return {"ok": False, "message": f"解析失败：{exc}", "courses": [], "modules": []}
@@ -99,6 +112,7 @@ def detect_header(rows: list[list[str]]) -> int:
 
 
 def row_to_course(row: list[str]) -> dict | None:
+    row = [normalize_text(cell) for cell in row]
     name = row[0] if row else ""
     if not name or len(name) < 2 or re.match(r"^\d+$", name):
         return None
@@ -112,11 +126,13 @@ def row_to_course(row: list[str]) -> dict | None:
             continue
         if any(k in cell for k in CATEGORY_MAP) and not category:
             category = cell
+        elif cell in {"优", "良", "中", "及格", "不及格", "通过", "免修"}:
+            score = cell
         elif re.match(r"^\d+(?:\.\d+)?$", cell):
             val = float(cell)
             if val <= 6 and credit == 0:
                 credit = val
-            elif val <= 100 or cell in {"优", "良", "中", "及格", "不及格", "通过", "免修"}:
+            elif val <= 100:
                 score = cell
 
     if credit <= 0:
@@ -135,7 +151,7 @@ def row_to_course(row: list[str]) -> dict | None:
 def parse_courses_from_text(text: str) -> list[dict]:
     courses: list[dict] = []
     for line in text.splitlines():
-        line = line.strip()
+        line = normalize_text(line).strip()
         if not line or len(line) < 4:
             continue
         if re.search(r"合计|总计|学年|学期|GPA", line):
@@ -168,6 +184,33 @@ def parse_courses_from_text(text: str) -> list[dict]:
             )
             break
     return courses
+
+
+def normalize_text(text: str) -> str:
+    return (
+        str(text or "")
+        .replace("\u3000", " ")
+        .replace("\xa0", " ")
+        .replace("（", "(")
+        .replace("）", ")")
+        .replace("：", ":")
+    )
+
+
+def deduplicate_courses(courses: list[dict]) -> list[dict]:
+    seen: set[tuple[str, str, float]] = set()
+    result: list[dict] = []
+    for item in courses:
+        key = (
+            str(item.get("name", "")).strip(),
+            str(item.get("moduleKey", "")).strip(),
+            round(float(item.get("credit", 0) or 0), 2),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
 
 
 def infer_category(name: str) -> str:

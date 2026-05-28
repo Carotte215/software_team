@@ -10,12 +10,17 @@ const lastTranscriptFile = ref(null);
 onMounted(load);
 
 async function load() {
-  const [reportRes, planRes] = await Promise.all([
-    api.getAcademicReport(),
-    api.getAcademicPlan(),
-  ]);
-  report.value = reportRes;
-  planPayload.value = planRes;
+  try {
+    const [reportRes, planRes] = await Promise.all([
+      api.getAcademicReport(),
+      api.getAcademicPlan(),
+    ]);
+    report.value = reportRes;
+    planPayload.value = planRes;
+  } catch (error) {
+    report.value = { ok: false, message: error.message || "学业数据加载失败" };
+    planPayload.value = null;
+  }
 }
 
 function earnedFor(key) {
@@ -28,9 +33,13 @@ async function saveProgress(event) {
     key: item.key,
     earned: Number(form.get(item.key) || 0),
   }));
-  await api.saveAcademicProgress(modules);
-  toast("已保存学业数据");
-  await load();
+  try {
+    await api.saveAcademicProgress(modules);
+    toast("已保存学业数据");
+    await load();
+  } catch (error) {
+    toast(error.message || "学业数据保存失败");
+  }
 }
 
 const parsePreview = ref(null);
@@ -42,10 +51,15 @@ async function uploadTranscript(event) {
     return;
   }
   lastTranscriptFile.value = file;
-  const result = await api.uploadTranscriptFile(file, false);
-  parsePreview.value = result;
-  toast(result.message || (result.ok ? "已解析，请确认后写入学分" : "解析失败"));
-  if (result.ok && !result.needsConfirm) await load();
+  try {
+    const result = await api.uploadTranscriptFile(file, false);
+    parsePreview.value = result;
+    toast(result.message || (result.ok ? "已解析，请确认后写入学分" : "解析失败"));
+    if (result.ok && !result.needsConfirm) await load();
+  } catch (error) {
+    parsePreview.value = null;
+    toast(error.message || "成绩单解析失败");
+  }
 }
 
 async function confirmParsedCredits() {
@@ -55,11 +69,15 @@ async function confirmParsedCredits() {
     toast("请重新选择 PDF 文件后确认");
     return;
   }
-  const result = await api.uploadTranscriptFile(file, true);
-  parsePreview.value = null;
-  lastTranscriptFile.value = null;
-  toast(result.message || "学分已更新");
-  await load();
+  try {
+    const result = await api.uploadTranscriptFile(file, true);
+    parsePreview.value = null;
+    lastTranscriptFile.value = null;
+    toast(result.message || "学分已更新");
+    await load();
+  } catch (error) {
+    toast(error.message || "学分写入失败");
+  }
 }
 </script>
 
@@ -74,11 +92,26 @@ async function confirmParsedCredits() {
           <input type="file" accept=".pdf" @change="uploadTranscript" />
         </label>
         <div v-if="parsePreview?.ok" class="card stack">
-          <p class="muted">识别 {{ parsePreview.courseCount || parsePreview.courses?.length || 0 }} 门课程</p>
+          <p class="muted">
+            识别 {{ parsePreview.courseCount || parsePreview.courses?.length || 0 }} 门课程
+            <span v-if="parsePreview.parseSource"> · 来源 {{ parsePreview.parseSource.toUpperCase() }}</span>
+          </p>
+          <div v-if="parsePreview.warnings?.length" class="stack">
+            <div v-for="(warning, i) in parsePreview.warnings" :key="`warning-${i}`" class="tag orange">{{ warning }}</div>
+          </div>
           <div v-if="parsePreview.courses?.length" class="stack">
             <div v-for="(c, i) in parsePreview.courses.slice(0, 8)" :key="i" class="muted">{{ c.name }} · {{ c.credit }} 学分 · {{ c.category }}</div>
           </div>
+          <div v-if="parsePreview.suggestedModules?.length" class="stack">
+            <div class="muted">建议写入模块：</div>
+            <div v-for="item in parsePreview.suggestedModules" :key="item.key" class="muted">{{ item.key }} · 已识别 {{ item.earned }} 学分</div>
+          </div>
           <button type="button" class="primary" @click="confirmParsedCredits">确认写入模块学分</button>
+        </div>
+        <div v-else-if="parsePreview && !parsePreview.ok" class="card stack">
+          <div class="tag orange">解析失败</div>
+          <p class="muted">{{ parsePreview.message || "未能识别课程数据" }}</p>
+          <div v-for="(warning, i) in parsePreview.warnings || []" :key="`fail-${i}`" class="muted">{{ warning }}</div>
         </div>
         <p v-if="report.warning" class="tag orange">{{ report.warning }}</p>
       </div>
@@ -107,7 +140,10 @@ async function confirmParsedCredits() {
     </section>
   </div>
 
-  <div v-else class="card">{{ report?.message || "加载中" }}</div>
+  <div v-else class="card">
+    <div>{{ report?.message || "加载中" }}</div>
+    <div v-if="report?.hint" class="muted">{{ report.hint }}</div>
+  </div>
 
   <div class="section-title">修读建议</div>
   <div class="stack">

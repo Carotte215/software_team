@@ -17,6 +17,7 @@ class Student(Base, TimestampMixin):
     __tablename__ = "students"
 
     student_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    role: Mapped[str] = mapped_column(String(32), default="student")
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     grade: Mapped[str] = mapped_column(String(32), nullable=False)
     major: Mapped[str] = mapped_column(String(128), nullable=False)

@@ -141,14 +141,22 @@ async function downloadAttachment(file) {
     toast("该附件暂无可下载文件，请联系管理员确认材料状态");
     return;
   }
-  const blob = await api.downloadFile(file);
-  saveBlob(blob, file.name || "attachment");
+  try {
+    const blob = await api.downloadFile(file);
+    saveBlob(blob, file.name || "attachment");
+  } catch (error) {
+    toast(error.message || "附件下载失败");
+  }
 }
 
 async function downloadDocument(item, format = "pdf") {
-  const blob = await api.downloadApplicationDocument(item.id, format);
-  saveBlob(blob, `${item.type}-${item.subtype || item.id}.${format === "pdf" ? "pdf" : "doc"}`);
-  toast("文档已生成");
+  try {
+    const blob = await api.downloadApplicationDocument(item.id, format);
+    saveBlob(blob, `${item.type}-${item.subtype || item.id}.${format === "pdf" ? "pdf" : "doc"}`);
+    toast("文档已生成");
+  } catch (error) {
+    toast(error.message || "文档生成失败");
+  }
 }
 </script>
 

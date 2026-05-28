@@ -1,7 +1,5 @@
 import csv
-import json
 from io import StringIO
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func, select
@@ -155,10 +153,10 @@ def load_questions(db: Session) -> list[dict]:
     rows = db.scalars(select(TheoryQuestion).order_by(TheoryQuestion.created_at)).all()
     if rows:
         return [question_dict(row) for row in rows]
-    legacy = read_json(question_path(), DEFAULT_QUESTIONS)
-    persist_questions(db, [normalize_question(item) for item in legacy])
+    defaults = [normalize_question(item) for item in DEFAULT_QUESTIONS]
+    persist_questions(db, defaults)
     db.commit()
-    return legacy
+    return defaults
 
 
 def persist_questions(db: Session, questions: list[dict]) -> None:
@@ -202,21 +200,6 @@ def attempt_payload(row: TheoryAttempt, correct: int | None = None) -> dict:
         "score": row.score,
         "details": row.detail or [],
     }
-
-
-def question_path() -> Path:
-    path = Path(get_settings().upload_dir).parent / "theory_questions.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def read_json(path: Path, fallback):
-    if not path.exists():
-        return fallback
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return fallback
 
 
 def public_question(row: dict) -> dict:

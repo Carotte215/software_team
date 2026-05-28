@@ -32,7 +32,11 @@ def report(db: Session = Depends(get_db), session: CurrentSession = Depends(get_
     plan_row = payload["plan"]
     progress_row = payload["progress"]
     if not plan_row or not progress_row:
-        return {"ok": False, "message": "缺少培养方案或学业进度。"}
+        return {
+            "ok": False,
+            "message": "缺少培养方案或学业进度。",
+            "hint": "请先让管理老师维护培养方案，再上传成绩单或手动录入模块学分。",
+        }
     progress_by_key = {item["key"]: item for item in progress_row["modules"]}
     modules = []
     for item in plan_row["modules"]:
@@ -101,6 +105,7 @@ async def upload_transcript(
         "parseOk": parsed["ok"],
         "parseMessage": parsed.get("message", ""),
         "courseCount": len(parsed.get("courses", [])),
+        "parseSource": parsed.get("parseSource", ""),
     }
     row.uploads = [upload_meta, *(row.uploads or [])]
 
@@ -120,6 +125,8 @@ async def upload_transcript(
         "message": parsed.get("message", ""),
         "courses": parsed.get("courses", []),
         "suggestedModules": parsed.get("modules", []),
+        "warnings": parsed.get("warnings", []),
+        "parseSource": parsed.get("parseSource", ""),
         "modules": row.modules,
         "needsConfirm": parsed["ok"] and not confirm,
     }
@@ -232,4 +239,4 @@ def group_plan_rows(rows: list[dict]) -> list[dict]:
         grouped.setdefault(key, {"grade": row["grade"], "major": row["major"], "modules": []})
         grouped[key]["modules"].append({"key": row["key"], "name": row["name"], "required": float(row["required"])})
     return list(grouped.values())
-
+

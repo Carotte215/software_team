@@ -19,6 +19,7 @@ from app.services.crypto_fields import decrypt_text, mask_id_card
 def student_public(row: Student, role: str) -> dict:
     base = {
         "studentId": row.student_id,
+        "role": row.role or "student",
         "name": row.name,
         "grade": row.grade,
         "major": row.major,

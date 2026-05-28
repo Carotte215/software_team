@@ -7,6 +7,7 @@ from app.deps import CurrentSession, get_current_session
 from app.models import KnowledgeItem, KnowledgeMissKeyword, TemplateFile
 from app.schemas import KnowledgeCreate, KnowledgeOnlinePut, KnowledgeUpdate
 from app.services.common import audit, uid
+from app.services.file_storage import attachment_file_ids, cleanup_orphan_files
 from app.services.permissions import COORDINATOR, TEACHER, require_roles
 from app.services.serializers import knowledge, template
 
@@ -101,6 +102,7 @@ def update_knowledge(
     row = db.get(KnowledgeItem, item_id)
     if not row:
         raise HTTPException(status_code=404, detail="knowledge not found")
+    old_file_ids = attachment_file_ids(row.attachments)
     row.title = payload.title
     row.category = payload.category
     row.tags = payload.tags
@@ -112,6 +114,7 @@ def update_knowledge(
     row.online = payload.online
     audit(db, session, "knowledge_update", item_id)
     db.commit()
+    cleanup_orphan_files(db, old_file_ids - attachment_file_ids(row.attachments))
     return knowledge(row)
 
 

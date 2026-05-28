@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, provide, ref, watchEffect } from "vue";
 import { ROLE_LABEL } from "./data/seed.js";
-import { readDb } from "./api/store.js";
 import { configureApi, getApiConfig } from "./api/client.js";
 import { getSession, setSession } from "./state/session.js";
 import { createApi } from "./services/api.js";
@@ -17,15 +16,13 @@ import ProfileView from "./views/ProfileView.vue";
 import WorkbenchView from "./views/WorkbenchView.vue";
 
 const route = ref(readRoute());
-const db = ref(readDb());
-const session = ref(getSession(db.value));
+const session = ref(getSession());
 const toastText = ref("");
 const loginBusy = ref(false);
-const loginForm = ref({ studentId: session.value.studentId, role: session.value.role, password: "" });
+const loginForm = ref({ studentId: session.value.studentId, password: "" });
 
 const api = createApi(session);
 const apiConfig = ref(getApiConfig());
-const isProd = import.meta.env.PROD;
 
 provide("api", api);
 provide("session", session);
@@ -49,58 +46,31 @@ const visibleNavRoutes = computed(() => getVisibleRoutes(session.value.role));
 const currentView = computed(() => viewMap[activeRoute.value] || HomeView);
 const currentTitle = computed(() => routes.find((item) => item.id === activeRoute.value)?.label || "首页");
 const mobileRoutes = computed(() => visibleNavRoutes.value.filter((item) => mobileRouteIds.includes(item.id)));
-const studentOptions = computed(() => db.value.students || []);
-const apiModeLabel = computed(() => (apiConfig.value.mode === "remote" ? "正式服务" : "离线数据"));
+const roleLabel = computed(() => ROLE_LABEL[session.value.role] || "未登录");
 
 window.addEventListener("hashchange", () => {
   route.value = readRoute();
 });
 
 window.addEventListener("sessionchange", () => {
-  db.value = readDb();
-  session.value = getSession(db.value);
+  session.value = getSession();
 });
 
 window.addEventListener("authrequired", () => {
-  setSession({ ...session.value, token: "" });
+  setSession({ studentId: "", role: "student", token: "" });
+  loginForm.value = { studentId: "", password: "" };
+  go("home");
   showToast("登录已过期，请重新登录");
 });
 
 onMounted(() => {
-  if (isProd) {
-    configureApi({ mode: "remote", baseUrl: import.meta.env.VITE_API_BASE || "/api" });
-    apiConfig.value = getApiConfig();
-  }
+  configureApi({ mode: "remote", baseUrl: import.meta.env.VITE_API_BASE || "/api" });
+  apiConfig.value = getApiConfig();
 });
 
 watchEffect(() => {
   document.title = `${currentTitle.value} - 学院学生综合服务`;
 });
-
-function onRoleChange(event) {
-  const role = event.target.value;
-  setSession({ ...session.value, role });
-  loginForm.value.role = role;
-  if (!canAccessRoute(route.value, role)) go("home");
-}
-
-function onStudentChange(event) {
-  const studentId = event.target.value;
-  setSession({ ...session.value, studentId });
-  loginForm.value.studentId = studentId;
-}
-
-function switchApiMode(mode) {
-  const baseUrl = mode === "remote" ? (apiConfig.value.baseUrl || "http://127.0.0.1:8000/api") : apiConfig.value.baseUrl;
-  api.configureApi({ mode, baseUrl });
-  apiConfig.value = api.getApiConfig();
-  if (mode === "remote") {
-    setSession({ ...session.value, token: "" });
-  } else if (!session.value.token) {
-    setSession({ ...session.value, token: "web-mock" });
-  }
-  showToast(mode === "remote" ? "已连接后端服务" : "已切换为离线数据模式");
-}
 
 async function loginRemote() {
   loginBusy.value = true;
@@ -117,7 +87,9 @@ async function loginRemote() {
 }
 
 function logoutRemote() {
-  setSession({ ...session.value, token: "" });
+  setSession({ studentId: "", role: "student", token: "" });
+  loginForm.value = { studentId: "", password: "" };
+  go("home");
   showToast("已退出登录");
 }
 
@@ -130,10 +102,8 @@ function showToast(message) {
 }
 
 function reloadShell() {
-  db.value = readDb();
-  session.value = getSession(db.value);
+  session.value = getSession();
   loginForm.value.studentId = session.value.studentId;
-  loginForm.value.role = session.value.role;
 }
 </script>
 
@@ -161,34 +131,21 @@ function reloadShell() {
       <div class="topbar">
       <h1 class="page-title">{{ currentTitle }}</h1>
         <div class="session-panel">
-          <span class="tag" :class="apiConfig.mode === 'remote' ? 'green' : 'gray'">
-            数据源 {{ apiModeLabel }}
+          <span class="tag green">
+            数据源 正式服务
           </span>
-          <button v-if="!isProd && apiConfig.mode !== 'remote'" @click="switchApiMode('remote')">连接服务</button>
-          <button v-if="!isProd && apiConfig.mode === 'remote'" @click="switchApiMode('mock')">离线模式</button>
-          <template v-if="apiConfig.mode === 'remote'">
-            <select v-model="loginForm.role" :disabled="Boolean(session.token)">
-              <option v-for="(label, id) in ROLE_LABEL" :key="id" :value="id">{{ label }}</option>
-            </select>
-            <select v-model="loginForm.studentId" :disabled="Boolean(session.token)">
-              <option v-for="student in studentOptions" :key="student.studentId" :value="student.studentId">
-                {{ student.name }} {{ student.studentId }}
-              </option>
-            </select>
-            <input v-if="!session.token" v-model="loginForm.password" type="password" placeholder="请输入登录密码" />
-            <button v-if="!session.token" :disabled="loginBusy" @click="loginRemote">
+          <template v-if="!session.token">
+            <input v-model="loginForm.studentId" placeholder="请输入学号" />
+            <input v-model="loginForm.password" type="password" placeholder="请输入登录密码" />
+            <button :disabled="loginBusy" @click="loginRemote">
               {{ loginBusy ? "登录中" : "登录" }}
             </button>
-            <button v-else @click="logoutRemote">退出</button>
           </template>
-          <select v-if="apiConfig.mode !== 'remote'" :value="session.role" @change="onRoleChange">
-            <option v-for="(label, id) in ROLE_LABEL" :key="id" :value="id">{{ label }}</option>
-          </select>
-          <select v-if="apiConfig.mode !== 'remote'" :value="session.studentId" @change="onStudentChange">
-            <option v-for="student in studentOptions" :key="student.studentId" :value="student.studentId">
-              {{ student.name }} {{ student.studentId }}
-            </option>
-          </select>
+          <template v-else>
+            <span class="tag gray">{{ roleLabel }}</span>
+            <span class="tag gray">{{ session.studentId }}</span>
+            <button @click="logoutRemote">退出</button>
+          </template>
         </div>
       </div>
 

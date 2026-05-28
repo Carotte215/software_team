@@ -15,6 +15,7 @@ from app.models import Honor
 from app.schemas import HonorCreate, HonorOnlinePut
 
 from app.services.common import audit, uid
+from app.services.file_storage import attachment_file_ids, cleanup_orphan_files
 
 from app.services.permissions import COORDINATOR, LEADER, TEACHER, require_roles
 
@@ -137,6 +138,7 @@ def update_honor(honor_id: str, payload: HonorCreate, db: Session = Depends(get_
     if not row:
 
         raise HTTPException(status_code=404, detail="honor not found")
+    old_file_ids = attachment_file_ids(row.attachments)
 
     row.title = payload.title
 
@@ -161,6 +163,7 @@ def update_honor(honor_id: str, payload: HonorCreate, db: Session = Depends(get_
     audit(db, session, "honor_update", honor_id)
 
     db.commit()
+    cleanup_orphan_files(db, old_file_ids - attachment_file_ids(row.attachments))
 
     return honor_public(row, session.role)
 
@@ -213,12 +216,14 @@ def delete_honor(honor_id: str, db: Session = Depends(get_db), session: CurrentS
     if not row:
 
         raise HTTPException(status_code=404, detail="honor not found")
+    old_file_ids = attachment_file_ids(row.attachments)
 
     db.delete(row)
 
     audit(db, session, "honor_delete", honor_id)
 
     db.commit()
+    cleanup_orphan_files(db, old_file_ids)
 
     return {"ok": True, "id": honor_id}
 

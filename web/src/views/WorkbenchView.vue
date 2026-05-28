@@ -1,5 +1,6 @@
 <script setup>
 import { inject, onMounted, reactive, ref } from "vue";
+import WorkbenchBatchTable from "../components/WorkbenchBatchTable.vue";
 import { APPROVAL, FLOW_STAGES, ROLES } from "../data/seed.js";
 import { formatTime } from "../utils.js";
 
@@ -115,6 +116,15 @@ const theoryForm = reactive({
 
 onMounted(load);
 
+async function withActionError(action, fallbackMessage) {
+  try {
+    return await action();
+  } catch (error) {
+    toast(error.message || fallbackMessage);
+    return null;
+  }
+}
+
 async function load() {
   if (session.value.role === ROLES.STUDENT) return;
   summary.value = await api.getWorkbenchSummary();
@@ -147,13 +157,14 @@ async function importExternalNotice() {
     toast("请填写通知标题");
     return;
   }
-  await api.importNotice({
+  const result = await withActionError(() => api.importNotice({
     title: noticeImportForm.title,
     summary: noticeImportForm.summary,
     content: noticeImportForm.content,
     tags: noticeImportForm.tags.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
     source: noticeImportForm.source,
-  });
+  }), "外部通知录入失败");
+  if (!result) return;
   toast("外部通知已录入");
   Object.assign(noticeImportForm, { title: "", summary: "", content: "", tags: "通知", source: "外部导入" });
   await load();
@@ -164,7 +175,8 @@ async function fetchNoticeFromUrl() {
     toast("请填写 URL");
     return;
   }
-  await api.fetchNoticeUrl({ url: noticeUrlForm.url, source: noticeUrlForm.source });
+  const result = await withActionError(() => api.fetchNoticeUrl({ url: noticeUrlForm.url, source: noticeUrlForm.source }), "网页通知抓取失败");
+  if (!result) return;
   toast("网页通知已抓取并入库");
   Object.assign(noticeUrlForm, { url: "", source: "网页抓取" });
   await load();
@@ -175,9 +187,14 @@ async function saveWorkbenchTemplate() {
     toast("请填写模板名称");
     return;
   }
+  if (!templateForm.id && !templateFile.value) {
+    toast("新建模板时请先上传真实模板文件");
+    return;
+  }
   let fileId = templateForm.fileId;
   if (templateFile.value) {
-    const uploaded = await api.uploadFile(templateFile.value, "template");
+    const uploaded = await withActionError(() => api.uploadFile(templateFile.value, "template"), "模板文件上传失败");
+    if (!uploaded) return;
     fileId = uploaded.id;
   }
   const payload = {
@@ -187,10 +204,12 @@ async function saveWorkbenchTemplate() {
     fileId,
   };
   if (templateForm.id) {
-    await api.updateWorkbenchTemplate(templateForm.id, payload);
+    const result = await withActionError(() => api.updateWorkbenchTemplate(templateForm.id, payload), "模板更新失败");
+    if (!result) return;
     toast("模板已更新");
   } else {
-    await api.createWorkbenchTemplate(payload);
+    const result = await withActionError(() => api.createWorkbenchTemplate(payload), "模板创建失败");
+    if (!result) return;
     toast("模板已创建");
   }
   Object.assign(templateForm, { id: "", name: "", scene: "", format: "docx", fileId: "" });
@@ -210,7 +229,8 @@ async function editWorkbenchTemplate(item) {
 
 async function deleteWorkbenchTemplate(id) {
   if (!window.confirm("确认删除该模板？")) return;
-  await api.deleteWorkbenchTemplate(id);
+  const result = await withActionError(() => api.deleteWorkbenchTemplate(id), "模板删除失败");
+  if (!result) return;
   toast("模板已删除");
   await load();
 }
@@ -230,12 +250,18 @@ async function saveAppTemplate() {
     toast("请填写模板名称");
     return;
   }
+  if (!appTemplateForm.bodyHtml.trim()) {
+    toast("请填写申请模板 HTML 内容");
+    return;
+  }
   const payload = { ...appTemplateForm };
   if (appTemplateForm.id) {
-    await api.updateApplicationTemplate(appTemplateForm.id, payload);
+    const result = await withActionError(() => api.updateApplicationTemplate(appTemplateForm.id, payload), "申请模板更新失败");
+    if (!result) return;
     toast("申请模板已更新");
   } else {
-    await api.createApplicationTemplate(payload);
+    const result = await withActionError(() => api.createApplicationTemplate(payload), "申请模板创建失败");
+    if (!result) return;
     toast("申请模板已创建");
   }
   Object.assign(appTemplateForm, { id: "", name: "", applyType: "证明申请", subtype: "", bodyHtml: "" });
@@ -244,26 +270,40 @@ async function saveAppTemplate() {
 
 async function deleteAppTemplate(id) {
   if (!window.confirm("确认删除该申请模板？")) return;
-  await api.deleteApplicationTemplate(id);
+  const result = await withActionError(() => api.deleteApplicationTemplate(id), "申请模板删除失败");
+  if (!result) return;
   toast("申请模板已删除");
   await load();
 }
 
 async function publishNotice() {
+  if (!noticeForm.title.trim() || !noticeForm.summary.trim() || !noticeForm.content.trim()) {
+    toast("请填写通知标题、摘要和正文");
+    return;
+  }
+  if (noticeForm.kind !== "all" && !String(noticeForm.value || "").trim()) {
+    toast("当前定向规则需要填写匹配值");
+    return;
+  }
+  if (noticeForm.kind === "extension" && (!noticeForm.extKey.trim() || !noticeForm.extValue.trim())) {
+    toast("扩展字段定向需要填写扩展键和值");
+    return;
+  }
   const tags = noticeForm.tags.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
   const targetRule = { kind: noticeForm.kind, value: noticeForm.value };
   if (noticeForm.kind === "extension") {
     targetRule.extKey = noticeForm.extKey;
     targetRule.extValue = noticeForm.extValue;
   }
-  const result = await api.publishNotice({
+  const result = await withActionError(() => api.publishNotice({
     title: noticeForm.title,
     summary: noticeForm.summary,
     content: noticeForm.content,
     tags,
     targetRule,
     scheduledAt: noticeForm.scheduledAt ? new Date(noticeForm.scheduledAt).getTime() : 0,
-  });
+  }), "通知发布失败");
+  if (!result) return;
   toast(result.scheduled ? "已生成定时通知批次" : "已生成通知批次");
   Object.assign(noticeForm, {
     title: "", summary: "", content: "", tags: "通知,党团", kind: "all", value: "",
@@ -285,7 +325,8 @@ async function applyBatchFilter() {
 }
 
 async function dispatchScheduled() {
-  const result = await api.dispatchScheduledNotices();
+  const result = await withActionError(() => api.dispatchScheduledNotices(), "定时通知派发失败");
+  if (!result) return;
   toast(`已派发 ${result.dispatched} 个到期批次`);
   await load();
 }
@@ -297,7 +338,8 @@ async function decide(id, action) {
   const message = action === "reject" ? "驳回原因" : "审批意见";
   const text = window.prompt(message, action === "reject" ? "材料不全，请补充后重提。" : "同意。") || "";
   const payload = action === "reject" ? { reason: text } : { comment: text };
-  await api.decideApplication(id, action, payload);
+  const result = await withActionError(() => api.decideApplication(id, action, payload), "审批操作失败");
+  if (!result) return;
   toast("操作完成");
   selectedApplication.value = null;
   await load();
@@ -401,12 +443,20 @@ async function saveKnowledge() {
     toast("请填写知识条目标题和摘要");
     return;
   }
-  knowledgeForm.attachments = await uploadKnowledgeAttachments();
+  if (!knowledgeForm.body.trim() && !knowledgeForm.officialLink.trim()) {
+    toast("请至少填写正文或官方链接");
+    return;
+  }
+  const uploaded = await withActionError(() => uploadKnowledgeAttachments(), "知识附件上传失败");
+  if (!uploaded) return;
+  knowledgeForm.attachments = uploaded;
   if (knowledgeForm.id) {
-    await api.updateKnowledge(knowledgeForm.id, knowledgePayload());
+    const result = await withActionError(() => api.updateKnowledge(knowledgeForm.id, knowledgePayload()), "知识条目更新失败");
+    if (!result) return;
     toast("知识条目已更新");
   } else {
-    await api.createKnowledge(knowledgePayload());
+    const result = await withActionError(() => api.createKnowledge(knowledgePayload()), "知识条目创建失败");
+    if (!result) return;
     toast("知识条目已创建");
   }
   resetKnowledgeForm();
@@ -414,7 +464,8 @@ async function saveKnowledge() {
 }
 
 async function toggleKnowledge(item) {
-  await api.setKnowledgeOnline(item.id, item.online === false);
+  const result = await withActionError(() => api.setKnowledgeOnline(item.id, item.online === false), "知识条目状态更新失败");
+  if (!result) return;
   toast(item.online === false ? "已上线" : "已下线");
   await load();
 }
@@ -424,7 +475,8 @@ async function advanceParty() {
     toast("请选择学生和目标阶段");
     return;
   }
-  await api.advancePartyStage({ ...partyForm });
+  const result = await withActionError(() => api.advancePartyStage({ ...partyForm }), "党团阶段推进失败");
+  if (!result) return;
   toast("党团阶段已推进");
   partyForm.remark = "";
   await load();
@@ -441,38 +493,57 @@ async function savePartyTimeline() {
     toast("暂无可保存的时间线规则");
     return;
   }
-  partyTimeline.value = await api.updatePartyTimeline(partyTimeline.value.rules);
+  const result = await withActionError(() => api.updatePartyTimeline(partyTimeline.value.rules), "党团时间线保存失败");
+  if (!result) return;
+  partyTimeline.value = result;
   toast("党团标准时间线已保存");
 }
 
 async function refreshPartyReminders() {
-  const result = await api.refreshPartyReminders();
+  const result = await withActionError(() => api.refreshPartyReminders(), "党团提醒刷新失败");
+  if (!result) return;
   toast(`已刷新 ${result.changed} 名学生的提醒任务`);
   await load();
 }
 
 async function exportStudents(format = "csv") {
-  const blob = await api.exportStudents(format);
-  saveBlob(blob, format === "xlsx" ? "学生画像导出.xlsx" : "学生画像导出.csv");
-  toast("学生画像导出已开始");
+  try {
+    const blob = await api.exportStudents(format);
+    saveBlob(blob, format === "xlsx" ? "学生画像导出.xlsx" : "学生画像导出.csv");
+    toast("学生画像导出已开始");
+  } catch (error) {
+    toast(error.message || "学生画像导出失败");
+  }
 }
 
 async function exportKnowledgeCsv() {
-  const blob = await api.exportKnowledge();
-  saveBlob(blob, "知识库导出.csv");
-  toast("知识库导出已开始");
+  try {
+    const blob = await api.exportKnowledge();
+    saveBlob(blob, "知识库导出.csv");
+    toast("知识库导出已开始");
+  } catch (error) {
+    toast(error.message || "知识库导出失败");
+  }
 }
 
 async function exportApplicationsCsv() {
-  const blob = await api.exportApplications();
-  saveBlob(blob, "申请记录导出.csv");
-  toast("申请记录导出已开始");
+  try {
+    const blob = await api.exportApplications();
+    saveBlob(blob, "申请记录导出.csv");
+    toast("申请记录导出已开始");
+  } catch (error) {
+    toast(error.message || "申请记录导出失败");
+  }
 }
 
 async function exportAuditLogsCsv() {
-  const blob = await api.exportAuditLogs();
-  saveBlob(blob, "审计日志导出.csv");
-  toast("审计日志导出已开始");
+  try {
+    const blob = await api.exportAuditLogs();
+    saveBlob(blob, "审计日志导出.csv");
+    toast("审计日志导出已开始");
+  } catch (error) {
+    toast(error.message || "审计日志导出失败");
+  }
 }
 
 async function savePartyStages() {
@@ -480,20 +551,23 @@ async function savePartyStages() {
     toast("暂无阶段配置");
     return;
   }
-  await api.updatePartyStages(partyTimeline.value.stages);
+  const result = await withActionError(() => api.updatePartyStages(partyTimeline.value.stages), "党团阶段配置保存失败");
+  if (!result) return;
   toast("党团阶段名称与说明已保存");
   await load();
 }
 
 async function deleteHonor(id) {
   if (!window.confirm("确认删除该荣誉条目？")) return;
-  await api.deleteHonor(id);
+  const result = await withActionError(() => api.deleteHonor(id), "荣誉删除失败");
+  if (!result) return;
   toast("荣誉条目已删除");
   await load();
 }
 
 async function toggleHonorOnline(item) {
-  await api.setHonorOnline(item.id, !item.online);
+  const result = await withActionError(() => api.setHonorOnline(item.id, !item.online), "荣誉状态更新失败");
+  if (!result) return;
   toast(item.online ? "荣誉已下线" : "荣誉已上线");
   await load();
 }
@@ -506,7 +580,8 @@ async function resetStudentPassword() {
     toast("密码过短");
     return;
   }
-  await api.resetPassword({ studentId, newPassword });
+  const result = await withActionError(() => api.resetPassword({ studentId, newPassword }), "密码重置失败");
+  if (!result) return;
   toast("密码已重置");
 }
 
@@ -550,7 +625,12 @@ async function saveStudentProfile() {
   });
   if (canEditStudentField("extension")) payload.extension = extension;
   if (canEditStudentField("idCard") && studentForm.idCard.trim()) payload.idCard = studentForm.idCard.trim();
-  await api.updateStudent(studentForm.studentId, payload);
+  if (payload.phone && !/^[0-9-]{6,20}$/.test(payload.phone)) {
+    toast("手机号格式不正确");
+    return;
+  }
+  const result = await withActionError(() => api.updateStudent(studentForm.studentId, payload), "学生画像更新失败");
+  if (!result) return;
   toast("学生画像已更新");
   await load();
 }
@@ -568,7 +648,7 @@ async function previewStudentImport() {
   studentImportResult.value = await api.importStudents(studentImportFile.value, {
     dryRun: true,
     overwrite: studentImportOverwrite.value,
-  });
+  }).catch((error) => ({ ok: false, errors: [{ row: 0, field: "file", message: error.message || "导入预检失败" }] }));
   toast(studentImportResult.value.errors?.length ? "导入预检发现错误" : "导入预检通过");
 }
 
@@ -583,7 +663,7 @@ async function commitStudentImport() {
   studentImportResult.value = await api.importStudents(studentImportFile.value, {
     dryRun: false,
     overwrite: studentImportOverwrite.value,
-  });
+  }).catch((error) => ({ ok: false, errors: [{ row: 0, field: "file", message: error.message || "导入失败" }] }));
   toast(studentImportResult.value.ok ? "学生数据已导入" : "导入失败，请先处理错误行");
   if (studentImportResult.value.ok) await load();
 }
@@ -654,11 +734,17 @@ async function saveAcademicPlan() {
       required: Number(row.required || 0),
     }))
     .filter((row) => row.key && row.name);
+  const uniqueKeys = new Set(modules.map((row) => row.key));
   if (!academicPlanForm.grade.trim() || !academicPlanForm.major.trim() || !modules.length) {
     toast("请填写年级、专业和至少一个模块");
     return;
   }
-  await api.saveAcademicPlan({ grade: academicPlanForm.grade, major: academicPlanForm.major, modules });
+  if (uniqueKeys.size !== modules.length || modules.some((row) => row.required <= 0)) {
+    toast("培养方案模块键必须唯一，且要求学分必须大于 0");
+    return;
+  }
+  const result = await withActionError(() => api.saveAcademicPlan({ grade: academicPlanForm.grade, major: academicPlanForm.major, modules }), "培养方案保存失败");
+  if (!result) return;
   toast("培养方案已保存");
   await load();
 }
@@ -702,10 +788,15 @@ async function saveTheoryQuestion() {
     category: theoryForm.category,
     online: theoryForm.online,
   };
+  if (!row.options.length || !row.options.includes(row.answer)) {
+    toast("理论题答案必须包含在选项中");
+    return;
+  }
   const list = theoryForm.id
     ? theoryQuestions.value.map((item) => (item.id === theoryForm.id ? row : item))
     : [row, ...theoryQuestions.value];
-  await api.saveTheoryQuestions(list);
+  const result = await withActionError(() => api.saveTheoryQuestions(list), "理论题保存失败");
+  if (!result) return;
   toast("理论题库已保存");
   resetTheoryForm();
   await load();
@@ -721,7 +812,10 @@ async function previewTheoryImport() {
     toast("请选择题库 CSV 文件");
     return;
   }
-  theoryImportResult.value = await api.importTheoryQuestions(theoryImportFile.value, { dryRun: true });
+  theoryImportResult.value = await api.importTheoryQuestions(theoryImportFile.value, { dryRun: true }).catch((error) => ({
+    ok: false,
+    errors: [{ row: 0, field: "file", message: error.message || "题库预检失败" }],
+  }));
   toast(theoryImportResult.value.errors?.length ? "题库预检发现错误" : "题库预检通过");
 }
 
@@ -730,7 +824,7 @@ async function commitTheoryImport() {
     toast("请选择题库 CSV 文件");
     return;
   }
-  theoryImportResult.value = await api.importTheoryQuestions(theoryImportFile.value, { dryRun: false });
+  theoryImportResult.value = await api.importTheoryQuestions(theoryImportFile.value, { dryRun: false }).catch((error) => ({ ok: false, errors: [{ row: 0, field: "file", message: error.message || "题库导入失败" }] }));
   toast(theoryImportResult.value.ok ? "题库已导入" : "导入失败，请处理错误行");
   if (theoryImportResult.value.ok) await load();
 }
@@ -745,7 +839,7 @@ async function previewAcademicPlanImport() {
     toast("请选择培养方案 CSV 文件");
     return;
   }
-  academicPlanImportResult.value = await api.importAcademicPlans(academicPlanImportFile.value, { dryRun: true });
+  academicPlanImportResult.value = await api.importAcademicPlans(academicPlanImportFile.value, { dryRun: true }).catch((error) => ({ ok: false, errors: [{ row: 0, field: "file", message: error.message || "培养方案预检失败" }] }));
   toast(academicPlanImportResult.value.errors?.length ? "培养方案预检发现错误" : "培养方案预检通过");
 }
 
@@ -754,7 +848,7 @@ async function commitAcademicPlanImport() {
     toast("请选择培养方案 CSV 文件");
     return;
   }
-  academicPlanImportResult.value = await api.importAcademicPlans(academicPlanImportFile.value, { dryRun: false });
+  academicPlanImportResult.value = await api.importAcademicPlans(academicPlanImportFile.value, { dryRun: false }).catch((error) => ({ ok: false, errors: [{ row: 0, field: "file", message: error.message || "培养方案导入失败" }] }));
   toast(academicPlanImportResult.value.ok ? "培养方案已导入" : "导入失败，请处理错误行");
   if (academicPlanImportResult.value.ok) await load();
 }
@@ -764,13 +858,21 @@ async function saveHonor() {
     toast("请填写荣誉名称和获奖人");
     return;
   }
-  honorForm.attachments = await uploadHonorAttachments();
+  if (Number(honorForm.year) < 2000 || Number(honorForm.year) > new Date().getFullYear() + 1) {
+    toast("荣誉年份不合理");
+    return;
+  }
+  const uploaded = await withActionError(() => uploadHonorAttachments(), "荣誉附件上传失败");
+  if (!uploaded) return;
+  honorForm.attachments = uploaded;
   const payload = { ...honorForm, year: Number(honorForm.year) };
   if (honorForm.id) {
-    await api.updateHonor(honorForm.id, payload);
+    const result = await withActionError(() => api.updateHonor(honorForm.id, payload), "荣誉条目更新失败");
+    if (!result) return;
     toast("荣誉条目已更新");
   } else {
-    await api.createHonor(payload);
+    const result = await withActionError(() => api.createHonor(payload), "荣誉条目创建失败");
+    if (!result) return;
     toast("荣誉条目已创建");
   }
   resetHonorForm();
@@ -1233,44 +1335,13 @@ async function saveHonor() {
       </div>
     </section>
 
-    <div class="row between">
-      <div class="section-title">批次统计</div>
-      <div class="row wrap">
-        <input v-model="batchFilter.title" placeholder="标题筛选" />
-        <input v-model="batchFilter.batchId" placeholder="批次号" />
-        <select v-model="batchFilter.status">
-          <option value="">全部状态</option>
-          <option value="sent">已发送</option>
-          <option value="scheduled">待发送</option>
-        </select>
-        <button @click="applyBatchFilter">筛选</button>
-        <button v-if="session.role === ROLES.TEACHER" class="primary" @click="dispatchScheduled">派发到期</button>
-      </div>
-    </div>
-    <div class="table-wrap">
-      <table class="table">
-        <thead>
-          <tr><th>批次</th><th>状态</th><th>渠道</th><th>发送/失败</th><th>送达/失败</th><th>已读</th><th>可观测性</th></tr>
-        </thead>
-        <tbody>
-          <template v-for="batch in batches" :key="batch.id">
-            <tr v-for="channel in batch.channels" :key="`${batch.id}-${channel.name}`">
-              <td>
-                {{ batch.title }}<br />
-                <span class="muted">{{ batch.id }}</span>
-                <span v-if="batch.scheduledAt" class="muted"><br />{{ formatTime(batch.scheduledAt) }}</span>
-              </td>
-              <td><span class="tag" :class="batch.status === 'scheduled' ? 'orange' : 'green'">{{ batch.status === "scheduled" ? "待发送" : "已发送" }}</span></td>
-              <td>{{ channel.name }}</td>
-              <td>{{ channel.sendOk }}/{{ channel.sendFail }}</td>
-              <td>{{ channel.deliverOk }}/{{ channel.deliverFail }}</td>
-              <td>{{ channel.read }}</td>
-              <td>{{ channel.observability || "可观测" }}</td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
-    </div>
+    <WorkbenchBatchTable
+      :batches="batches"
+      :batch-filter="batchFilter"
+      :can-dispatch="session.role === ROLES.TEACHER"
+      @apply-filter="applyBatchFilter"
+      @dispatch-scheduled="dispatchScheduled"
+    />
 
     <div class="section-title">高频未命中词</div>
     <div class="stack">
