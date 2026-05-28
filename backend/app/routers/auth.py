@@ -32,13 +32,12 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> dict:
     if student.password_hash:
         if not verify_password(payload.password, student.password_hash):
             raise HTTPException(status_code=401, detail="invalid credential")
-    elif get_settings().auth_mode != "token":
-        if payload.password != get_settings().auth_demo_password:
-            raise HTTPException(status_code=401, detail="invalid credential")
-    else:
+    elif get_settings().auth_mode == "token" or get_settings().app_env == "production":
         expected = default_initial_password(student.student_id)
         if payload.password != expected:
             raise HTTPException(status_code=401, detail="invalid credential")
+    elif payload.password != get_settings().auth_demo_password:
+        raise HTTPException(status_code=401, detail="invalid credential")
 
     token = issue_token(payload.student_id, role)
     audit(

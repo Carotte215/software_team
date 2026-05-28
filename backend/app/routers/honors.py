@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from sqlalchemy import or_, select
 
@@ -39,6 +39,8 @@ def list_honors(
 
     category: str = "",
 
+    grade: str = "",
+
     q: str = "",
 
     include_offline: bool = False,
@@ -70,6 +72,10 @@ def list_honors(
     if category:
 
         stmt = stmt.where(Honor.category == category)
+
+    if grade:
+
+        stmt = stmt.where(Honor.grade.ilike(f"%{grade}%"))
 
     if q:
 
@@ -206,7 +212,6 @@ def set_honor_online(
 
 
 @router.delete("/{honor_id}")
-
 def delete_honor(honor_id: str, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
 
     require_roles(session, TEACHER)
@@ -228,6 +233,56 @@ def delete_honor(honor_id: str, db: Session = Depends(get_db), session: CurrentS
     return {"ok": True, "id": honor_id}
 
 
+
+@router.post('/workbench/import')
+async def import_honors(
+    file: UploadFile = File(...),
+    dry_run: bool = Form(default=True, alias='dryRun'),
+    db: Session = Depends(get_db),
+    session: CurrentSession = Depends(get_current_session),
+) -> dict:
+    import csv
+    from io import StringIO
+
+    require_roles(session, TEACHER)
+    text = (await file.read()).decode('utf-8-sig')
+    reader = csv.DictReader(StringIO(text))
+    rows = []
+    errors = []
+    for index, row in enumerate(reader, start=2):
+        title = (row.get('标题') or row.get('title') or '').strip()
+        winner = (row.get('获奖人') or row.get('winner') or '').strip()
+        year_raw = (row.get('年份') or row.get('year') or '').strip()
+        if not title or not winner or not year_raw:
+            errors.append({'row': index, 'message': '标题、获奖人、年份必填'})
+            continue
+        try:
+            year = int(year_raw)
+        except ValueError:
+            errors.append({'row': index, 'message': '年份须为整数'})
+            continue
+        rows.append(
+            Honor(
+                id=uid('honor'),
+                title=title,
+                winner=winner,
+                year=year,
+                major=(row.get('专业') or row.get('major') or '').strip(),
+                grade=(row.get('年级') or row.get('grade') or '').strip(),
+                category=(row.get('类别') or row.get('category') or '校级').strip(),
+                intro=(row.get('简介') or row.get('intro') or '').strip(),
+                visibility='public',
+                online=True,
+                attachments=[],
+            ),
+        )
+    if dry_run or errors:
+        return {'ok': not errors, 'dryRun': True, 'total': len(rows), 'errors': errors}
+    for item in rows:
+        db.add(item)
+    audit(db, session, 'honors_import', file.filename or 'honors.csv', {'count': len(rows)})
+    db.commit()
+    return {'ok': True, 'dryRun': False, 'total': len(rows), 'errors': []}
 
 
 

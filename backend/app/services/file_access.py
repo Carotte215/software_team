@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.deps import CurrentSession
-from app.models import Application, Honor, KnowledgeItem
+from app.models import Application, Honor, KnowledgeItem, LeagueProgress, PartyProgress
 from app.services.permissions import COORDINATOR, scoped_student_ids
 
 
@@ -18,7 +18,7 @@ def assert_file_access(db: Session, session: CurrentSession, file_id: str, meta:
         return
 
     business = meta.get("business", "general")
-    allowed_business = {"general", "honor", "knowledge", "application", "template"}
+    allowed_business = {"general", "honor", "knowledge", "application", "template", "party", "league"}
     if business not in allowed_business:
         raise HTTPException(status_code=403, detail="unknown file business")
 
@@ -40,6 +40,11 @@ def assert_file_access(db: Session, session: CurrentSession, file_id: str, meta:
     if business == "template":
         return
 
+    if business in {"party", "league"}:
+        if _party_material_allows_file(db, file_id, session, league=business == "league"):
+            return
+        raise HTTPException(status_code=403, detail="party material forbidden")
+
     if uploader and uploader != session.student_id:
         raise HTTPException(status_code=403, detail="forbidden")
 
@@ -49,6 +54,18 @@ def _file_in_attachments(attachments: list[dict] | None, file_id: str) -> bool:
         if item.get("id") == file_id or item.get("fileId") == file_id:
             return True
     return False
+
+
+def _party_material_allows_file(db: Session, file_id: str, session: CurrentSession, *, league: bool = False) -> bool:
+    model = LeagueProgress if league else PartyProgress
+    if session.role in {"teacher", "leader"}:
+        return db.scalars(select(model)).first() is not None
+    row = db.get(model, session.student_id)
+    if not row:
+        return False
+    from app.services.party_materials import collect_step_file_ids
+
+    return file_id in collect_step_file_ids(row)
 
 
 def _honor_allows_file(db: Session, file_id: str, session: CurrentSession) -> bool:

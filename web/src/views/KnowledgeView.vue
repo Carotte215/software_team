@@ -1,30 +1,61 @@
 <script setup>
-import { inject, onMounted, reactive, ref } from "vue";
+import { inject, onMounted, reactive, ref, watch } from "vue";
 import { formatTime } from "../utils.js";
 
 const api = inject("api");
 const toast = inject("toast");
+const tab = ref("search");
 const query = reactive({ q: "", category: "全部" });
 const list = ref([]);
 const categories = ref(["全部"]);
 const templates = ref([]);
 const expanded = ref(null);
 const previewUrl = ref("");
+const favoriteIds = ref(new Set());
+const searchMeta = ref(null);
 
 onMounted(load);
 
 async function load() {
-  const res = await api.searchKnowledge(query);
-  list.value = res.list || [];
-  categories.value = res.categories || ["全部"];
-  templates.value = res.templates || [];
-  if (query.q.trim() && list.value.length === 0) {
-    await api.recordKnowledgeMiss(query.q.trim());
+  if (tab.value === "search") {
+    const res = await api.searchKnowledge(query);
+    list.value = res.list || [];
+    searchMeta.value = res.searchMeta || null;
+    categories.value = res.categories || ["全部"];
+    templates.value = res.templates || [];
+    if (query.q.trim() && list.value.length === 0) {
+      await api.recordKnowledgeMiss(query.q.trim());
+    }
+  } else if (tab.value === "favorites") {
+    list.value = (await api.listKnowledgeFavorites().catch(() => ({ list: [] }))).list || [];
+  } else if (tab.value === "recent") {
+    list.value = (await api.listKnowledgeRecent().catch(() => ({ list: [] }))).list || [];
+  } else if (tab.value === "trending") {
+    list.value = (await api.listKnowledgeTrending().catch(() => ({ list: [] }))).list || [];
   }
+  const fav = await api.listKnowledgeFavorites().catch(() => ({ list: [] }));
+  favoriteIds.value = new Set((fav.list || []).map((item) => item.id));
 }
+
+watch(tab, load);
 
 async function expandItem(item) {
   expanded.value = await api.getKnowledge(item.id).catch(() => item);
+  if (expanded.value?.favorited) favoriteIds.value.add(item.id);
+}
+
+async function toggleFavorite(item) {
+  try {
+    const res = favoriteIds.value.has(item.id)
+      ? await api.removeKnowledgeFavorite(item.id)
+      : await api.toggleKnowledgeFavorite(item.id);
+    if (res.favorited) favoriteIds.value.add(item.id);
+    else favoriteIds.value.delete(item.id);
+    toast(res.favorited ? "已收藏" : "已取消收藏");
+    if (tab.value === "favorites") await load();
+  } catch (error) {
+    toast(error.message || "收藏操作失败");
+  }
 }
 
 function saveBlob(blob, name) {
@@ -67,7 +98,14 @@ async function previewAttachment(file) {
 </script>
 
 <template>
-  <form class="toolbar" @submit.prevent="load">
+  <div class="toolbar row wrap">
+    <button :class="{ primary: tab === 'search' }" @click="tab = 'search'">搜索</button>
+    <button :class="{ primary: tab === 'favorites' }" @click="tab = 'favorites'">我的收藏</button>
+    <button :class="{ primary: tab === 'recent' }" @click="tab = 'recent'">最近浏览</button>
+    <button :class="{ primary: tab === 'trending' }" @click="tab = 'trending'">热门政策</button>
+  </div>
+
+  <form v-if="tab === 'search'" class="toolbar" @submit.prevent="load">
     <input v-model="query.q" placeholder="输入关键词，如：奖助学金、宿舍、休学" />
     <select v-model="query.category" @change="load">
       <option v-for="item in categories" :key="item">{{ item }}</option>
@@ -96,6 +134,7 @@ async function previewAttachment(file) {
           </p>
           <div class="row wrap">
             <button @click="expandItem(item)">查看详情</button>
+            <button @click="toggleFavorite(item)">{{ favoriteIds.has(item.id) ? "取消收藏" : "收藏" }}</button>
             <button v-for="file in item.attachments || []" :key="file.id || file.name" @click="downloadAttachment(file)">
               下载 {{ file.name }}
             </button>
@@ -105,7 +144,11 @@ async function previewAttachment(file) {
           </div>
         </article>
       </div>
-      <div v-else class="empty card">未命中，已写入高频未命中词队列。</div>
+      <div v-else-if="searchMeta?.noResult" class="card stack">
+        <p>{{ searchMeta.hint }}</p>
+        <p class="muted">关键词「{{ searchMeta.keyword }}」已记录至工作台「未命中词」，供管理员补充知识库。</p>
+      </div>
+      <div v-else class="empty card">输入关键词开始检索政策与办事说明。</div>
     </section>
 
     <section>

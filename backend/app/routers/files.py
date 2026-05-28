@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -16,7 +17,7 @@ from app.services.file_storage import data_path, meta_path, storage_root
 router = APIRouter(tags=["files"])
 
 BLOCKED_SUFFIXES = {".exe", ".bat", ".cmd", ".sh", ".js", ".msi"}
-ALLOWED_BUSINESSES = {"general", "knowledge", "honor", "application", "template"}
+ALLOWED_BUSINESSES = {"general", "knowledge", "honor", "application", "template", "party", "league"}
 
 
 def safe_suffix(filename: str) -> str:

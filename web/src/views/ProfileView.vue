@@ -30,9 +30,13 @@ async function changePassword() {
     toast("两次输入的新密码不一致");
     return;
   }
-  await api.changePassword({ oldPassword: pwdForm.oldPassword, newPassword: pwdForm.newPassword });
-  toast("密码已修改");
-  Object.assign(pwdForm, { oldPassword: "", newPassword: "", confirm: "" });
+  try {
+    await api.changePassword({ oldPassword: pwdForm.oldPassword, newPassword: pwdForm.newPassword });
+    toast("密码已修改");
+    Object.assign(pwdForm, { oldPassword: "", newPassword: "", confirm: "" });
+  } catch (error) {
+    toast(error.message || "密码修改失败，请检查当前密码");
+  }
 }
 
 async function saveExtension() {

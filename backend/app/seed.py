@@ -10,6 +10,7 @@ from app.models import (
     ApplicationTemplate,
     Honor,
     KnowledgeItem,
+    LeagueProgress,
     Message,
     Notice,
     PartyProgress,
@@ -19,6 +20,7 @@ from app.models import (
     TemplateFile,
     TheoryQuestion,
 )
+from app.services.party_bootstrap import ensure_party_official_content
 from app.services.passwords import default_initial_password, hash_password
 from app.services.seed_data import (
     APPLICATION_TEMPLATES,
@@ -75,17 +77,31 @@ def seed() -> None:
                     courses=[],
                 ),
             )
-            current = "activist" if "2024" in grade else "candidate"
+            party_key = {"2024201581": "applicant", "2023200444": "activist", "2022200999": "probationary", "2024210888": "applicant"}
+            league_key = {"2024201581": "l_apply", "2023200444": "l_activist", "2022200999": "l_member", "2024210888": "l_apply"}
+            current = party_key.get(sid, "applicant")
             db.add(
                 PartyProgress(
                     student_id=sid,
                     current_key=current,
-                    history=[{"stageKey": "applicant", "at": int((datetime.now(timezone.utc) - timedelta(days=40)).timestamp() * 1000), "remark": "已递交申请书"}],
-                    tasks=[{"id": f"task_{sid}_1", "title": "提交阶段材料", "body": "按当前阶段材料清单补齐材料。", "dueAt": int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp() * 1000), "done": False}],
+                    history=[{"stageKey": "applicant", "at": int((datetime.now(timezone.utc) - timedelta(days=40)).timestamp() * 1000), "remark": "已递交入党申请书"}],
+                    tasks=[],
+                    completed_steps=["step_01", "step_02"] if current != "applicant" else ["step_01"],
+                ),
+            )
+            db.add(
+                LeagueProgress(
+                    student_id=sid,
+                    current_key=league_key.get(sid, "l_apply"),
+                    history=[{"stageKey": "l_apply", "at": int((datetime.now(timezone.utc) - timedelta(days=30)).timestamp() * 1000), "remark": "入团申请已提交"}],
+                    tasks=[],
+                    completed_steps=[],
                 ),
             )
 
         for kid, title, category, tags, summary, sensitive in KNOWLEDGE:
+            from app.services.seed_data import KNOWLEDGE_BODIES
+
             db.add(
                 KnowledgeItem(
                     id=kid,
@@ -93,7 +109,7 @@ def seed() -> None:
                     category=category,
                     tags=tags,
                     summary=summary,
-                    body=f"{summary}\n请以学院官网最新通知为准。",
+                    body=KNOWLEDGE_BODIES.get(kid, f"{summary}\n请以学院官网最新通知为准。"),
                     sensitive_hint=sensitive,
                 ),
             )
@@ -147,6 +163,7 @@ def seed() -> None:
         db.add(Honor(id="h1", title="国家奖学金", winner="李某", year=2025, major="计算机科学与技术", grade="2022级", category="国家级", intro="学年绩点与综合素质评价列前。", visibility="public", attachments=[]))
         db.add(Honor(id="h2", title="校级优秀共青团员", winner="王某", year=2024, major="软件工程", grade="2023级", category="校级", intro="志愿服务与团支部建设突出。", visibility="public", attachments=[]))
 
+        ensure_party_official_content(db)
         db.commit()
         print("Seed complete.")
     finally:

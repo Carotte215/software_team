@@ -25,6 +25,8 @@ defineEmits(["apply-filter", "dispatch-scheduled"]);
     <div class="row wrap">
       <input v-model="batchFilter.title" placeholder="标题筛选" />
       <input v-model="batchFilter.batchId" placeholder="批次号" />
+      <input v-model="batchFilter.fromDate" type="date" placeholder="起始日期" />
+      <input v-model="batchFilter.toDate" type="date" placeholder="截止日期" />
       <select v-model="batchFilter.status">
         <option value="">全部状态</option>
         <option value="sent">已发送</option>

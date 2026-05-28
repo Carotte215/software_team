@@ -214,6 +214,8 @@ def publish_notice(payload: NoticePublish, db: Session = Depends(get_db), sessio
 
         **payload.target_rule,
 
+        "_channels": {"enableEmail": payload.enable_email, "enableSmsSim": payload.enable_sms_sim},
+
         "_schedule": {
 
             "noticeId": notice_row.id,
@@ -246,7 +248,14 @@ def publish_notice(payload: NoticePublish, db: Session = Depends(get_db), sessio
 
     if not scheduled:
 
-        batch_row.channels = dispatch_notice(db, notice_row, batch_row.id, targets)
+        batch_row.channels = dispatch_notice(
+            db,
+            notice_row,
+            batch_row.id,
+            targets,
+            enable_email=payload.enable_email,
+            enable_sms_sim=payload.enable_sms_sim,
+        )
 
     audit(db, session, "notice_schedule" if scheduled else "notice_publish", batch_row.id, {"reach": len(targets), "scheduledAt": scheduled_at})
 
@@ -352,7 +361,15 @@ def run_scheduled_dispatch(db: Session, session: CurrentSession) -> dict:
 
         targets = [s for s in db.scalars(select(Student)).all() if match_rule(row.target_rule, s, session, current)]
 
-        row.channels = dispatch_notice(db, notice_row, row.id, targets)
+        channels = (row.target_rule or {}).get("_channels", {})
+        row.channels = dispatch_notice(
+            db,
+            notice_row,
+            row.id,
+            targets,
+            enable_email=bool(channels.get("enableEmail")),
+            enable_sms_sim=bool(channels.get("enableSmsSim")),
+        )
 
         row.target_rule = {
 
@@ -433,6 +450,18 @@ def match_rule(rule: dict, student: Student, session: CurrentSession, current: S
     if kind == "political":
 
         return value in (student.political_status or "")
+
+    if kind == "partyStage":
+        from app.models import PartyProgress
+
+        row = db.get(PartyProgress, student.student_id)
+        return bool(row and row.current_key == value)
+
+    if kind == "leagueStage":
+        from app.models import LeagueProgress
+
+        row = db.get(LeagueProgress, student.student_id)
+        return bool(row and row.current_key == value)
 
     if kind == "extension":
 

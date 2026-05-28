@@ -12,6 +12,8 @@ from app.deps import CurrentSession, get_current_session
 from app.models import Application, Student
 from app.routers.application_templates import find_template
 from app.schemas import ApplicationCreate, ApplicationDecision
+from app.services.application_form import resolve_id_card, sanitize_application_form
+from app.services.application_validation import validate_application_payload
 from app.services.common import audit, now_ms, uid
 from app.services.file_storage import attachment_file_ids, cleanup_orphan_files
 from app.services.permissions import COORDINATOR, LEADER, TEACHER, require_roles, scoped_student_ids
@@ -60,6 +62,9 @@ def get_draft(db: Session = Depends(get_db), session: CurrentSession = Depends(g
 
 @router.post("/applications/draft")
 def save_draft(payload: ApplicationCreate, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+    validate_application_payload(payload.type, payload.subtype, payload.form)
+    student = db.get(Student, session.student_id)
+    sanitized_form = sanitize_application_form(payload.form, student)
     row = db.scalars(
         select(Application)
         .where(Application.student_id == session.student_id, Application.status == STATUS_DRAFT)
@@ -69,7 +74,7 @@ def save_draft(payload: ApplicationCreate, db: Session = Depends(get_db), sessio
     if row:
         row.type = payload.type
         row.subtype = payload.subtype
-        row.form = payload.form
+        row.form = sanitized_form
         row.attachments = payload.attachments
         row.audit_trail = [*row.audit_trail, {"at": now_ms(), "actor": "学生", "action": "保存草稿", "remark": payload.remark}]
     else:
@@ -79,7 +84,7 @@ def save_draft(payload: ApplicationCreate, db: Session = Depends(get_db), sessio
             type=payload.type,
             subtype=payload.subtype,
             status=STATUS_DRAFT,
-            form=payload.form,
+            form=sanitized_form,
             attachments=payload.attachments,
             audit_trail=[{"at": now_ms(), "actor": "学生", "action": "保存草稿", "remark": payload.remark}],
         )
@@ -97,6 +102,7 @@ def preview_application(
     db: Session = Depends(get_db),
     session: CurrentSession = Depends(get_current_session),
 ) -> dict:
+    validate_application_payload(payload.type, payload.subtype, payload.form)
     student = db.get(Student, session.student_id)
     if not student:
         raise HTTPException(status_code=404, detail="student not found")
@@ -117,8 +123,11 @@ def preview_application(
 
 @router.post("/applications")
 def create_application(payload: ApplicationCreate, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+    validate_application_payload(payload.type, payload.subtype, payload.form)
     if payload.type == "盖章申请" and not payload.attachments:
         raise HTTPException(status_code=400, detail="盖章申请须上传附件")
+    student = db.get(Student, session.student_id)
+    sanitized_form = sanitize_application_form(payload.form, student)
     draft_rows = db.scalars(
         select(Application).where(Application.student_id == session.student_id, Application.status == STATUS_DRAFT),
     ).all()
@@ -132,7 +141,7 @@ def create_application(payload: ApplicationCreate, db: Session = Depends(get_db)
         type=payload.type,
         subtype=payload.subtype,
         status=STATUS_PENDING,
-        form=payload.form,
+        form=sanitized_form,
         attachments=payload.attachments,
         audit_trail=[
             {"at": now_ms(), "actor": "学生", "action": "已提交", "remark": payload.remark},
@@ -215,11 +224,14 @@ def submit_existing_application(
         raise HTTPException(status_code=400, detail="invalid state")
     if payload.type == "盖章申请" and not payload.attachments:
         raise HTTPException(status_code=400, detail="盖章申请须上传附件")
+    validate_application_payload(payload.type, payload.subtype, payload.form)
+    student = db.get(Student, session.student_id)
+    sanitized_form = sanitize_application_form(payload.form, student)
     old_file_ids = attachment_file_ids(row.attachments)
     previous_status = row.status
     row.type = payload.type
     row.subtype = payload.subtype
-    row.form = payload.form
+    row.form = sanitized_form
     row.attachments = payload.attachments
     row.status = STATUS_PENDING
     row.teacher_comment = ""
@@ -250,6 +262,13 @@ def render_application_document(row: Application, student: Student, db: Session)
         "{{reason}}": str(form.get("reason", "")),
         "{{startDate}}": str(form.get("startDate", "")),
         "{{endDate}}": str(form.get("endDate", "")),
+        "{{idCard}}": resolve_id_card(form),
+        "{{partyJoinDate}}": str(form.get("partyJoinDate", "")),
+        "{{partyBranch}}": str(form.get("partyBranch", "")),
+        "{{leagueJoinDate}}": str(form.get("leagueJoinDate", "")),
+        "{{memberNo}}": str(form.get("memberNo", "")),
+        "{{contactName}}": str(form.get("contactName", "组织工作咨询")),
+        "{{contactPhone}}": str(form.get("contactPhone", "010-62513007")),
         "{{status}}": row.status,
         "{{comment}}": row.teacher_comment or "",
         "{{generatedAt}}": generated_at,
@@ -305,36 +324,42 @@ def render_application_document(row: Application, student: Student, db: Session)
 
 
 def render_application_pdf(row: Application, student: Student, html_body: str | None = None) -> bytes:
-    from io import BytesIO
+    from app.services.html_pdf import html_to_pdf_bytes
 
-    from reportlab.lib.pagesizes import A4
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-    from reportlab.pdfgen import canvas
+    html = html_body or render_application_document(row, student, None)
+    try:
+        return html_to_pdf_bytes(html)
+    except Exception:
+        from io import BytesIO
 
-    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
-    buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    c.setFont("STSong-Light", 16)
-    c.drawString(72, 800, "学院学生事务申请/证明单")
-    c.setFont("STSong-Light", 11)
-    y = 760
-    form = row.form or {}
-    lines = [
-        f"姓名：{student.name}",
-        f"学号：{student.student_id}",
-        f"年级/专业/班级：{student.grade} / {student.major} / {student.class_name}",
-        f"申请类型：{row.type} / {row.subtype}",
-        f"申请事由：{form.get('reason', '')}",
-        f"审批状态：{row.status}",
-        f"审批意见：{row.teacher_comment or ''}",
-    ]
-    for line in lines:
-        c.drawString(72, y, line[:80])
-        y -= 22
-    c.showPage()
-    c.save()
-    return buffer.getvalue()
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+        from reportlab.pdfgen import canvas
+
+        pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+        buffer = BytesIO()
+        c = canvas.Canvas(buffer, pagesize=A4)
+        c.setFont("STSong-Light", 16)
+        c.drawString(72, 800, "学院学生事务申请/证明单")
+        c.setFont("STSong-Light", 11)
+        y = 760
+        form = row.form or {}
+        lines = [
+            f"姓名：{student.name}",
+            f"学号：{student.student_id}",
+            f"年级/专业/班级：{student.grade} / {student.major} / {student.class_name}",
+            f"申请类型：{row.type} / {row.subtype}",
+            f"申请事由：{form.get('reason', '')}",
+            f"审批状态：{row.status}",
+            f"审批意见：{row.teacher_comment or ''}",
+        ]
+        for line in lines:
+            c.drawString(72, y, line[:80])
+            y -= 22
+        c.showPage()
+        c.save()
+        return buffer.getvalue()
 
 
 @router.post("/workbench/applications/{app_id}/{action}")

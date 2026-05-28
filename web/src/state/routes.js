@@ -6,13 +6,14 @@ const managementRoles = [ROLES.TEACHER, ROLES.COORDINATOR, ROLES.LEADER];
 export const routes = [
   { id: "home", label: "首页", roles: allRoles },
   { id: "knowledge", label: "政策知识库", roles: allRoles },
-  { id: "party", label: "党团流程", roles: [ROLES.STUDENT, ROLES.TEACHER] },
-  { id: "apply", label: "办事申请", roles: [ROLES.STUDENT, ROLES.TEACHER] },
+  { id: "party", label: "党团流程", roles: allRoles },
+  { id: "apply", label: "办事申请", roles: [ROLES.STUDENT, ROLES.TEACHER, ROLES.COORDINATOR] },
   { id: "notices", label: "通知消息", roles: allRoles },
   { id: "honors", label: "奖励荣誉", roles: allRoles },
   { id: "academic", label: "学业分析", roles: [ROLES.STUDENT, ROLES.TEACHER, ROLES.LEADER] },
   { id: "profile", label: "学生画像", roles: allRoles },
   { id: "workbench", label: "管理工作台", roles: managementRoles },
+  { id: "help", label: "需求追溯", roles: allRoles },
 ];
 
 export const mobileRouteIds = ["home", "knowledge", "party", "apply", "profile"];

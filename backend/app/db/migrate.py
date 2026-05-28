@@ -2,9 +2,11 @@
 
 from sqlalchemy import inspect, select, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 
 from app.models import Student
 from app.services.passwords import default_initial_password, hash_password
+from app.services.party_bootstrap import ensure_party_official_content
 from app.services.seed_data import STUDENTS
 
 
@@ -55,15 +57,44 @@ def ensure_schema(engine: Engine) -> None:
         for ddl in (
             "CREATE TABLE IF NOT EXISTS party_timeline_rules (stage_key VARCHAR(64) PRIMARY KEY, duration_days INTEGER DEFAULT 0, remind_before_days INTEGER DEFAULT 0, material TEXT DEFAULT '', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
             "CREATE TABLE IF NOT EXISTS party_stages (stage_key VARCHAR(64) PRIMARY KEY, name VARCHAR(64) NOT NULL, description TEXT DEFAULT '', sort_order INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS league_progress (student_id VARCHAR(32) PRIMARY KEY, current_key VARCHAR(64) DEFAULT 'l_apply', history JSONB DEFAULT '[]', tasks JSONB DEFAULT '[]', completed_steps JSONB DEFAULT '[]', verified_steps JSONB DEFAULT '[]', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS league_timeline_rules (stage_key VARCHAR(64) PRIMARY KEY, duration_days INTEGER DEFAULT 0, remind_before_days INTEGER DEFAULT 0, material TEXT DEFAULT '', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS knowledge_favorites (student_id VARCHAR(32) NOT NULL, item_id VARCHAR(64) NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), PRIMARY KEY (student_id, item_id))",
+            "CREATE TABLE IF NOT EXISTS knowledge_recent_views (id SERIAL PRIMARY KEY, student_id VARCHAR(32) NOT NULL, item_id VARCHAR(64) NOT NULL, viewed_at TIMESTAMPTZ DEFAULT NOW(), created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
             "CREATE TABLE IF NOT EXISTS theory_questions (id VARCHAR(64) PRIMARY KEY, stem TEXT NOT NULL, options JSONB DEFAULT '[]', answer VARCHAR(200) DEFAULT '', explanation TEXT DEFAULT '', category VARCHAR(64) DEFAULT '', online BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
             "CREATE TABLE IF NOT EXISTS theory_attempts (id VARCHAR(64) PRIMARY KEY, student_id VARCHAR(32), score INTEGER DEFAULT 0, total INTEGER DEFAULT 0, detail JSONB DEFAULT '[]', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
             "CREATE TABLE IF NOT EXISTS application_templates (id VARCHAR(64) PRIMARY KEY, name VARCHAR(120) NOT NULL, apply_type VARCHAR(64) DEFAULT '', subtype VARCHAR(64) DEFAULT '', body_html TEXT DEFAULT '', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
             "CREATE TABLE IF NOT EXISTS knowledge_miss_keywords (keyword VARCHAR(200) PRIMARY KEY, count INTEGER DEFAULT 1, last_student_id VARCHAR(32) DEFAULT '', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
             "CREATE TABLE IF NOT EXISTS sms_simulations (id VARCHAR(64) PRIMARY KEY, batch_id VARCHAR(64), student_id VARCHAR(32), phone_masked VARCHAR(32) DEFAULT '', text TEXT DEFAULT '', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS party_calendar_events (id VARCHAR(64) PRIMARY KEY, event_date VARCHAR(16) DEFAULT '', title VARCHAR(200) DEFAULT '', note TEXT DEFAULT '', tags JSONB DEFAULT '[]', online BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         ):
             conn.execute(text(ddl))
 
+        if "party_progress" in tables:
+            cols = {col["name"] for col in inspector.get_columns("party_progress")}
+            if "completed_steps" not in cols:
+                conn.execute(text("ALTER TABLE party_progress ADD COLUMN completed_steps JSONB DEFAULT '[]'"))
+            if "verified_steps" not in cols:
+                conn.execute(text("ALTER TABLE party_progress ADD COLUMN verified_steps JSONB DEFAULT '[]'"))
+            if "step_materials" not in cols:
+                conn.execute(text("ALTER TABLE party_progress ADD COLUMN step_materials JSONB DEFAULT '{}'"))
+            if "thought_reports" not in cols:
+                conn.execute(text("ALTER TABLE party_progress ADD COLUMN thought_reports JSONB DEFAULT '[]'"))
+
+        if "league_progress" in tables:
+            cols = {col["name"] for col in inspector.get_columns("league_progress")}
+            if "verified_steps" not in cols:
+                conn.execute(text("ALTER TABLE league_progress ADD COLUMN verified_steps JSONB DEFAULT '[]'"))
+            if "step_materials" not in cols:
+                conn.execute(text("ALTER TABLE league_progress ADD COLUMN step_materials JSONB DEFAULT '{}'"))
+
     backfill_student_defaults(engine)
+    sync_party_official_content(engine)
+
+
+def sync_party_official_content(engine: Engine) -> None:
+    with Session(engine) as db:
+        ensure_party_official_content(db)
 
 
 def backfill_student_defaults(engine: Engine) -> None:

@@ -153,7 +153,21 @@ def load_questions(db: Session) -> list[dict]:
     rows = db.scalars(select(TheoryQuestion).order_by(TheoryQuestion.created_at)).all()
     if rows:
         return [question_dict(row) for row in rows]
-    defaults = [normalize_question(item) for item in DEFAULT_QUESTIONS]
+    from app.services.party_official_data import OFFICIAL_THEORY_QUESTIONS
+    from app.services.seed_data import THEORY_QUESTIONS
+
+    merged: dict[str, dict] = {}
+    for qid, stem, opts, ans, expl, cat in THEORY_QUESTIONS:
+        merged[qid] = normalize_question(
+            {"id": qid, "stem": stem, "options": [o for o in opts.split(";") if o], "answer": ans, "explanation": expl, "category": cat, "online": True},
+        )
+    for qid, stem, opts, ans, expl, cat in OFFICIAL_THEORY_QUESTIONS:
+        merged[qid] = normalize_question(
+            {"id": qid, "stem": stem, "options": [o for o in opts.split(";") if o], "answer": ans, "explanation": expl, "category": cat, "online": True},
+        )
+    for item in DEFAULT_QUESTIONS:
+        merged.setdefault(item["id"], normalize_question(item))
+    defaults = list(merged.values())
     persist_questions(db, defaults)
     db.commit()
     return defaults

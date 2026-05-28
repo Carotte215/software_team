@@ -1,11 +1,16 @@
 <script setup>
-import { inject, onMounted, ref } from "vue";
+import { computed, inject, onMounted, ref } from "vue";
+import { ROLES } from "../data/seed.js";
+import { go } from "../state/routes.js";
 
 const api = inject("api");
 const toast = inject("toast");
+const session = inject("session");
 const report = ref(null);
 const planPayload = ref(null);
 const lastTranscriptFile = ref(null);
+
+const isStudent = computed(() => session.value.role === ROLES.STUDENT);
 
 onMounted(load);
 
@@ -82,6 +87,11 @@ async function confirmParsedCredits() {
 </script>
 
 <template>
+  <div v-if="!isStudent" class="card">
+    <p>管理端请在工作台查看<strong>学业风险名单</strong>（按培养方案缺口排序）。</p>
+    <button class="primary" @click="go('workbench')">前往工作台</button>
+  </div>
+
   <div v-if="report?.ok" class="grid cols-2">
     <section>
       <div class="card">
@@ -140,7 +150,7 @@ async function confirmParsedCredits() {
     </section>
   </div>
 
-  <div v-else class="card">
+  <div v-else-if="isStudent" class="card">
     <div>{{ report?.message || "加载中" }}</div>
     <div v-if="report?.hint" class="muted">{{ report.hint }}</div>
   </div>

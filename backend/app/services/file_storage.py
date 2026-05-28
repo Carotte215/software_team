@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import Application, Honor, KnowledgeItem, TemplateFile
+from app.models import Application, Honor, KnowledgeItem, LeagueProgress, PartyProgress, TemplateFile
 
 
 def storage_root() -> Path:
@@ -42,6 +42,16 @@ def cleanup_orphan_files(db: Session, file_ids: set[str] | list[str] | tuple[str
     return deleted
 
 
+def progress_attachment_ids(row: PartyProgress | LeagueProgress) -> set[str]:
+    result: set[str] = set()
+    for items in (row.step_materials or {}).values():
+        result.update(attachment_file_ids(items))
+    if isinstance(row, PartyProgress):
+        for report in row.thought_reports or []:
+            result.update(attachment_file_ids(report.get("attachments")))
+    return result
+
+
 def file_is_referenced(db: Session, file_id: str) -> bool:
     if db.scalars(select(TemplateFile).where(TemplateFile.file_id == file_id)).first():
         return True
@@ -53,6 +63,12 @@ def file_is_referenced(db: Session, file_id: str) -> bool:
             return True
     for row in db.scalars(select(Application.attachments)).all():
         if file_id in attachment_file_ids(row):
+            return True
+    for row in db.scalars(select(PartyProgress)).all():
+        if file_id in progress_attachment_ids(row):
+            return True
+    for row in db.scalars(select(LeagueProgress)).all():
+        if file_id in progress_attachment_ids(row):
             return True
     return False
 

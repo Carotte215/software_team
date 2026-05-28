@@ -8,6 +8,7 @@ from app.models import (
     Message,
     Notice,
     NoticeBatch,
+    LeagueProgress,
     PartyProgress,
     Student,
     TemplateFile,
@@ -61,9 +62,13 @@ def knowledge(row: KnowledgeItem, q: str = "") -> dict:
         "online": row.online,
     }
     if q and q.lower() in (row.title or "").lower():
-        payload["matchReason"] = "标题匹配"
+        payload["matchReason"] = "标题匹配（标准条目优先）"
+    elif q and row.official_link:
+        payload["matchReason"] = "含官方链接依据"
+    elif q and any(q.lower() in str(tag).lower() for tag in (row.tags or [])):
+        payload["matchReason"] = "标签匹配"
     elif q:
-        payload["matchReason"] = "内容匹配"
+        payload["matchReason"] = "正文匹配"
     return payload
 
 
@@ -146,7 +151,28 @@ def honor_public(row: Honor, role: str) -> dict:
 
 
 def party(row: PartyProgress) -> dict:
-    return {"studentId": row.student_id, "currentKey": row.current_key, "history": row.history or [], "tasks": row.tasks or []}
+    return {
+        "studentId": row.student_id,
+        "currentKey": row.current_key,
+        "history": row.history or [],
+        "tasks": row.tasks or [],
+        "completedSteps": row.completed_steps or [],
+        "verifiedSteps": row.verified_steps or [],
+        "stepMaterials": row.step_materials or {},
+        "thoughtReports": row.thought_reports or [],
+    }
+
+
+def league(row: LeagueProgress) -> dict:
+    return {
+        "studentId": row.student_id,
+        "currentKey": row.current_key,
+        "history": row.history or [],
+        "tasks": row.tasks or [],
+        "completedSteps": row.completed_steps or [],
+        "verifiedSteps": row.verified_steps or [],
+        "stepMaterials": row.step_materials or {},
+    }
 
 
 def academic_plan(row: AcademicPlan | None) -> dict | None:

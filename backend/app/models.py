@@ -57,6 +57,22 @@ class KnowledgeMissKeyword(Base, TimestampMixin):
     last_student_id: Mapped[str] = mapped_column(String(32), default="")
 
 
+class KnowledgeFavorite(Base, TimestampMixin):
+    __tablename__ = "knowledge_favorites"
+
+    student_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+
+class KnowledgeRecentView(Base, TimestampMixin):
+    __tablename__ = "knowledge_recent_views"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    student_id: Mapped[str] = mapped_column(String(32), index=True)
+    item_id: Mapped[str] = mapped_column(String(64), index=True)
+    viewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class TemplateFile(Base, TimestampMixin):
     __tablename__ = "template_files"
 
@@ -141,6 +157,31 @@ class PartyProgress(Base, TimestampMixin):
     current_key: Mapped[str] = mapped_column(String(64), default="applicant")
     history: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
     tasks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    completed_steps: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    verified_steps: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    step_materials: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    thought_reports: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+
+
+class LeagueProgress(Base, TimestampMixin):
+    __tablename__ = "league_progress"
+
+    student_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    current_key: Mapped[str] = mapped_column(String(64), default="l_apply")
+    history: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    tasks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    completed_steps: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    verified_steps: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    step_materials: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+
+class LeagueTimelineRule(Base, TimestampMixin):
+    __tablename__ = "league_timeline_rules"
+
+    stage_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    duration_days: Mapped[int] = mapped_column(Integer, default=0)
+    remind_before_days: Mapped[int] = mapped_column(Integer, default=0)
+    material: Mapped[str] = mapped_column(Text, default="")
 
 
 class PartyStage(Base, TimestampMixin):
@@ -218,6 +259,17 @@ class SmsSimulation(Base, TimestampMixin):
     student_id: Mapped[str] = mapped_column(String(32), index=True)
     phone_masked: Mapped[str] = mapped_column(String(32), default="")
     text: Mapped[str] = mapped_column(Text, default="")
+
+
+class PartyCalendarEvent(Base, TimestampMixin):
+    __tablename__ = "party_calendar_events"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    event_date: Mapped[str] = mapped_column(String(16), default="")
+    title: Mapped[str] = mapped_column(String(200), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    online: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class AuditLog(Base):

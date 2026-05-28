@@ -14,6 +14,7 @@ import HonorsView from "./views/HonorsView.vue";
 import AcademicView from "./views/AcademicView.vue";
 import ProfileView from "./views/ProfileView.vue";
 import WorkbenchView from "./views/WorkbenchView.vue";
+import HelpView from "./views/HelpView.vue";
 
 const route = ref(readRoute());
 const session = ref(getSession());
@@ -39,6 +40,7 @@ const viewMap = {
   academic: AcademicView,
   profile: ProfileView,
   workbench: WorkbenchView,
+  help: HelpView,
 };
 
 const activeRoute = computed(() => (canAccessRoute(route.value, session.value.role) ? route.value : "home"));

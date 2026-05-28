@@ -23,6 +23,7 @@ const academicRisks = ref([]);
 const academicPlans = ref([]);
 const partyTimeline = ref(null);
 const partyProgressList = ref([]);
+const leagueProgressList = ref([]);
 const fieldPolicy = ref(null);
 const studentImportFile = ref(null);
 const studentImportOverwrite = ref(false);
@@ -69,12 +70,17 @@ const noticeForm = reactive({
   extKey: "",
   extValue: "",
   scheduledAt: "",
+  enableEmail: false,
+  enableSmsSim: false,
 });
 const batchFilter = reactive({
   title: "",
   batchId: "",
   status: "",
+  fromDate: "",
+  toDate: "",
 });
+const calendarEvents = ref([]);
 const knowledgeForm = reactive({
   id: "",
   title: "",
@@ -91,6 +97,13 @@ const partyForm = reactive({
   studentId: "",
   nextKey: "activist",
   remark: "",
+  force: false,
+});
+const leagueForm = reactive({
+  studentId: "",
+  nextKey: "l_activist",
+  remark: "",
+  force: false,
 });
 const honorForm = reactive({
   id: "",
@@ -142,14 +155,23 @@ async function load() {
   academicPlans.value = (await api.listAcademicPlans().catch(() => ({ list: [] }))).list || [];
   theoryQuestions.value = (await api.listTheoryQuestionAdmin().catch(() => ({ list: [] }))).list || [];
   partyTimeline.value = await api.getPartyTimeline().catch(() => null);
-  partyProgressList.value = (await api.listPartyProgress().catch(() => ({ list: [] }))).list || [];
+  partyProgressList.value = (await api.listPartyProgress(
+    partyClassFilter.value ? { className: partyClassFilter.value } : {},
+  ).catch(() => ({ list: [] }))).list || [];
+  leagueProgressList.value = (await api.listLeagueProgress().catch(() => ({ list: [] }))).list || [];
   workbenchTemplates.value = (await api.listWorkbenchTemplates().catch(() => ({ list: [] }))).list || [];
   appTemplates.value = (await api.listApplicationTemplates().catch(() => ({ list: [] }))).list || [];
   if (!partyForm.studentId && students.value.length) partyForm.studentId = students.value[0].studentId;
+  if (!leagueForm.studentId && students.value.length) leagueForm.studentId = students.value[0].studentId;
+  await loadPartyPendingSteps();
+  await loadLeaguePendingSteps();
   logs.value = (await api.listAuditLogs({ limit: 20 }).catch(() => ({ list: [] }))).list || [];
   leader.value = session.value.role === ROLES.LEADER
     ? await api.getLeaderDashboard().catch(() => null)
     : null;
+  if ([ROLES.TEACHER, ROLES.LEADER].includes(session.value.role)) {
+    calendarEvents.value = (await api.listPartyCalendarAdmin().catch(() => ({ list: [] }))).list || [];
+  }
 }
 
 async function importExternalNotice() {
@@ -302,22 +324,47 @@ async function publishNotice() {
     tags,
     targetRule,
     scheduledAt: noticeForm.scheduledAt ? new Date(noticeForm.scheduledAt).getTime() : 0,
+    enableEmail: noticeForm.enableEmail,
+    enableSmsSim: noticeForm.enableSmsSim,
   }), "通知发布失败");
   if (!result) return;
   toast(result.scheduled ? "已生成定时通知批次" : "已生成通知批次");
   Object.assign(noticeForm, {
     title: "", summary: "", content: "", tags: "通知,党团", kind: "all", value: "",
-    extKey: "", extValue: "", scheduledAt: "",
+    extKey: "", extValue: "", scheduledAt: "", enableEmail: false, enableSmsSim: false,
   });
   await load();
 }
 
 function batchQuery() {
-  return {
+  const query = {
     title: batchFilter.title,
     batchId: batchFilter.batchId,
     status: batchFilter.status,
   };
+  if (batchFilter.fromDate) query.fromMs = new Date(batchFilter.fromDate).getTime();
+  if (batchFilter.toDate) query.toMs = new Date(`${batchFilter.toDate}T23:59:59`).getTime();
+  return query;
+}
+
+async function saveCalendarEvents() {
+  const result = await withActionError(
+    () => api.savePartyCalendarAdmin(calendarEvents.value),
+    "校历保存失败",
+  );
+  if (!result) return;
+  toast(`已保存 ${result.count || calendarEvents.value.length} 条校历事件`);
+  await load();
+}
+
+function addCalendarRow() {
+  calendarEvents.value.push({
+    id: `cal_${Date.now()}`,
+    date: "",
+    title: "",
+    note: "",
+    online: true,
+  });
 }
 
 async function applyBatchFilter() {
@@ -481,6 +528,94 @@ async function advanceParty() {
   partyForm.remark = "";
   await load();
 }
+
+async function advanceLeague() {
+  if (!leagueForm.studentId || !leagueForm.nextKey) {
+    toast("请选择学生和目标阶段");
+    return;
+  }
+  const result = await withActionError(() => api.advanceLeagueStage({ ...leagueForm }), "入团阶段推进失败");
+  if (!result) return;
+  toast("入团阶段已推进");
+  leagueForm.remark = "";
+  await load();
+}
+
+const partyPendingSteps = ref([]);
+const leaguePendingSteps = ref([]);
+const partyClassFilter = ref("");
+const partyStudentDetail = ref(null);
+
+async function loadPartyPendingSteps() {
+  if (!partyForm.studentId || session.value.role !== ROLES.TEACHER) {
+    partyPendingSteps.value = [];
+    partyStudentDetail.value = null;
+    return;
+  }
+  const result = await api.getStudentPartyPendingSteps(partyForm.studentId).catch(() => ({ steps: [] }));
+  partyPendingSteps.value = result.steps || [];
+  partyStudentDetail.value = result;
+}
+
+async function loadLeaguePendingSteps() {
+  if (!leagueForm.studentId || session.value.role !== ROLES.TEACHER) {
+    leaguePendingSteps.value = [];
+    return;
+  }
+  const result = await api.getStudentLeaguePendingSteps(leagueForm.studentId).catch(() => ({ steps: [] }));
+  leaguePendingSteps.value = result.steps || [];
+}
+
+async function exportPartyProgress() {
+  try {
+    const blob = await api.exportPartyProgress();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "党团进度台账.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+    toast("党团台账已导出");
+  } catch (error) {
+    toast(error.message || "导出失败");
+  }
+}
+
+async function verifyPartyStep(studentId, stepId) {
+  const result = await withActionError(
+    () => api.verifyPartyStep({ studentId, stepId }),
+    "环节确认失败",
+  );
+  if (!result) return;
+  toast("环节已确认");
+  await load();
+  await loadPartyPendingSteps();
+}
+
+async function verifyLeagueStep(studentId, stepId) {
+  const result = await withActionError(
+    () => api.verifyLeagueStep({ studentId, stepId }),
+    "入团环节确认失败",
+  );
+  if (!result) return;
+  toast("入团环节已确认");
+  await load();
+  await loadLeaguePendingSteps();
+}
+
+async function refreshLeagueReminders() {
+  const result = await withActionError(() => api.refreshLeagueReminders(), "入团提醒刷新失败");
+  if (!result) return;
+  toast(`已刷新 ${result.changed} 名学生的入团提醒`);
+  await load();
+}
+
+const LEAGUE_STAGES = [
+  { key: "l_apply", name: "入团申请" },
+  { key: "l_activist", name: "入团积极分子" },
+  { key: "l_develop", name: "发展对象" },
+  { key: "l_member", name: "共青团员" },
+];
 
 function stageName(key) {
   const fromApi = partyTimeline.value?.stages?.find((stage) => stage.key === key);
@@ -853,6 +988,39 @@ async function commitAcademicPlanImport() {
   if (academicPlanImportResult.value.ok) await load();
 }
 
+const honorImportFile = ref(null);
+const honorImportResult = ref(null);
+
+function onHonorImportFile(event) {
+  honorImportFile.value = event.target.files?.[0] || null;
+  honorImportResult.value = null;
+}
+
+async function previewHonorImport() {
+  if (!honorImportFile.value) {
+    toast("请选择荣誉 CSV 文件");
+    return;
+  }
+  honorImportResult.value = await api.importHonors(honorImportFile.value, { dryRun: true }).catch((error) => ({
+    ok: false,
+    errors: [{ row: 0, message: error.message || "荣誉预检失败" }],
+  }));
+  toast(honorImportResult.value.errors?.length ? "荣誉预检发现错误" : `预检通过，可导入 ${honorImportResult.value.total || 0} 条`);
+}
+
+async function commitHonorImport() {
+  if (!honorImportFile.value) {
+    toast("请选择荣誉 CSV 文件");
+    return;
+  }
+  honorImportResult.value = await api.importHonors(honorImportFile.value, { dryRun: false }).catch((error) => ({
+    ok: false,
+    errors: [{ row: 0, message: error.message || "荣誉导入失败" }],
+  }));
+  toast(honorImportResult.value.ok ? `已导入 ${honorImportResult.value.total || 0} 条荣誉` : "导入失败");
+  if (honorImportResult.value.ok) await load();
+}
+
 async function saveHonor() {
   if (!honorForm.title.trim() || !honorForm.winner.trim()) {
     toast("请填写荣誉名称和获奖人");
@@ -895,8 +1063,18 @@ async function saveHonor() {
     </div>
 
     <div v-if="leader" class="section-title">领导看板</div>
-    <div v-if="leader" class="card">
-      政策条目 {{ leader.knowledgeCount }} · 通知 {{ leader.noticeCount }} · 学业高风险 {{ leader.academicHighRiskStudents }}
+    <div v-if="leader" class="card stack">
+      <p>政策条目 {{ leader.knowledgeCount }} · 通知 {{ leader.noticeCount }} · 学业高风险 {{ leader.academicHighRiskStudents }} · 待审批 {{ leader.pendingApps }}</p>
+      <div v-if="leader.partyProgress" class="row wrap">
+        <span class="tag">入党跟踪 {{ leader.partyProgress.total }} 人</span>
+        <span class="tag gray">待确认环节 {{ leader.partyProgress.pendingVerifySteps }}</span>
+        <span v-for="item in leader.partyProgress.byStage || []" :key="item.key" class="tag">{{ item.name }} {{ item.count }}</span>
+      </div>
+      <div v-if="leader.leagueProgress" class="row wrap">
+        <span class="tag">入团跟踪 {{ leader.leagueProgress.total }} 人</span>
+        <span class="tag gray">待确认环节 {{ leader.leagueProgress.pendingVerifySteps }}</span>
+        <span v-for="item in leader.leagueProgress.byStage || []" :key="item.key" class="tag">{{ item.name }} {{ item.count }}</span>
+      </div>
     </div>
 
     <div class="grid cols-2">
@@ -942,13 +1120,27 @@ async function saveHonor() {
             <option value="major">按专业</option>
             <option value="class">按班级</option>
             <option value="political">按政治面貌</option>
+            <option value="partyStage">按入党阶段</option>
+            <option value="leagueStage">按入团阶段</option>
             <option value="extension">按扩展字段</option>
           </select>
-          <input v-if="noticeForm.kind !== 'extension'" v-model="noticeForm.value" placeholder="规则值，如 2024级 / 软件工程 / 共青团员" />
+          <input
+            v-if="noticeForm.kind !== 'extension' && noticeForm.kind !== 'all'"
+            v-model="noticeForm.value"
+            :placeholder="noticeForm.kind === 'partyStage' ? '阶段键，如 activist / candidate' : noticeForm.kind === 'leagueStage' ? '阶段键，如 l_activist' : '规则值，如 2024级 / 软件工程 / 共青团员'"
+          />
           <template v-if="noticeForm.kind === 'extension'">
             <input v-model="noticeForm.extKey" placeholder="扩展字段名，如 volunteerHours" />
             <input v-model="noticeForm.extValue" placeholder="扩展字段值，如 32" />
           </template>
+          <label class="row">
+            <input v-model="noticeForm.enableEmail" type="checkbox" />
+            同步发送邮件（需配置 SMTP）
+          </label>
+          <label class="row">
+            <input v-model="noticeForm.enableSmsSim" type="checkbox" />
+            记录短信模拟发送
+          </label>
           <label>
             定时发送
             <input v-model="noticeForm.scheduledAt" type="datetime-local" />
@@ -973,11 +1165,38 @@ async function saveHonor() {
     </div>
 
     <section class="card" v-if="session.role === ROLES.TEACHER">
+      <div class="row between">
+        <h3>党团校历维护（FR3 / 校历联动）</h3>
+        <div class="row wrap">
+          <button type="button" @click="addCalendarRow">新增节点</button>
+          <button class="primary" @click="saveCalendarEvents">保存校历</button>
+        </div>
+      </div>
+      <div v-if="!calendarEvents.length" class="empty">暂无校历节点，点击「新增节点」或等待系统从官方校历初始化。</div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th>日期</th><th>标题</th><th>说明</th><th>上线</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in calendarEvents" :key="item.id">
+              <td><input v-model="item.date" type="date" /></td>
+              <td><input v-model="item.title" /></td>
+              <td><input v-model="item.note" /></td>
+              <td><input v-model="item.online" type="checkbox" /></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted">保存后学生党团页「校历要点」将同步更新；点击「刷新提醒」可为近 21 天节点生成待办。</p>
+    </section>
+
+    <section class="card" v-if="session.role === ROLES.TEACHER">
       <h3>党团阶段推进</h3>
       <form class="form-grid" @submit.prevent="advanceParty">
         <label>
           学生
-          <select v-model="partyForm.studentId">
+          <select v-model="partyForm.studentId" @change="loadPartyPendingSteps">
             <option v-for="student in students" :key="student.studentId" :value="student.studentId">
               {{ student.name }} {{ student.studentId }}
             </option>
@@ -993,10 +1212,66 @@ async function saveHonor() {
           备注
           <input v-model="partyForm.remark" placeholder="如：支部审批通过，进入下一阶段" />
         </label>
+        <label class="span-2 row">
+          <input v-model="partyForm.force" type="checkbox" />
+          <span>强制推进（跳过未确认环节校验）</span>
+        </label>
         <div class="span-2 row">
           <button class="primary">推进阶段</button>
         </div>
       </form>
+      <div v-if="partyPendingSteps.length" class="stack" style="margin-top:16px">
+        <h4>待确认环节</h4>
+        <div v-for="step in partyPendingSteps" :key="step.id" class="card row between">
+          <span>{{ step.order }}. {{ step.name }}</span>
+          <button class="primary" @click="verifyPartyStep(partyForm.studentId, step.id)">确认</button>
+        </div>
+      </div>
+      <div v-if="partyStudentDetail?.thoughtReports?.length" class="stack" style="margin-top:16px">
+        <h4>思想汇报（{{ partyStudentDetail.thoughtReports.length }}）</h4>
+        <article v-for="item in partyStudentDetail.thoughtReports" :key="item.id" class="card muted">
+          {{ item.quarter }} · {{ formatTime(item.submittedAt) }} · {{ item.content.slice(0, 80) }}…
+        </article>
+      </div>
+    </section>
+
+    <section class="card" v-if="session.role === ROLES.TEACHER">
+      <h3>入团阶段推进</h3>
+      <form class="form-grid" @submit.prevent="advanceLeague">
+        <label>
+          学生
+          <select v-model="leagueForm.studentId" @change="loadLeaguePendingSteps">
+            <option v-for="student in students" :key="student.studentId" :value="student.studentId">
+              {{ student.name }} {{ student.studentId }}
+            </option>
+          </select>
+        </label>
+        <label>
+          目标阶段
+          <select v-model="leagueForm.nextKey">
+            <option v-for="stage in LEAGUE_STAGES" :key="stage.key" :value="stage.key">{{ stage.name }}</option>
+          </select>
+        </label>
+        <label class="span-2">
+          备注
+          <input v-model="leagueForm.remark" placeholder="如：团支部审批通过" />
+        </label>
+        <label class="span-2 row">
+          <input v-model="leagueForm.force" type="checkbox" />
+          <span>强制推进（跳过未确认环节校验）</span>
+        </label>
+        <div class="span-2 row">
+          <button class="primary">推进入团阶段</button>
+          <button type="button" @click="refreshLeagueReminders">刷新入团提醒</button>
+        </div>
+      </form>
+      <div v-if="leaguePendingSteps.length" class="stack" style="margin-top:16px">
+        <h4>待确认入团环节</h4>
+        <div v-for="step in leaguePendingSteps" :key="step.id" class="card row between">
+          <span>{{ step.order }}. {{ step.name }}</span>
+          <button class="primary" @click="verifyLeagueStep(leagueForm.studentId, step.id)">确认</button>
+        </div>
+      </div>
     </section>
 
     <section class="card" v-if="partyTimeline && [ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
@@ -1048,11 +1323,20 @@ async function saveHonor() {
     </section>
 
     <section class="card" v-if="partyProgressList.length && [ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
-      <h3>党团进度一览</h3>
+      <div class="row between wrap">
+        <h3>党团进度一览</h3>
+        <div class="row wrap">
+          <select v-model="partyClassFilter" @change="load">
+            <option value="">全部班级</option>
+            <option v-for="student in students" :key="student.className" :value="student.className">{{ student.className }}</option>
+          </select>
+          <button v-if="session.role === ROLES.TEACHER" @click="exportPartyProgress">导出 CSV</button>
+        </div>
+      </div>
       <div class="table-wrap">
         <table class="table">
           <thead>
-            <tr><th>学号</th><th>姓名</th><th>班级</th><th>当前阶段</th><th>待办</th></tr>
+            <tr><th>学号</th><th>姓名</th><th>班级</th><th>当前阶段</th><th>环节进度</th><th>材料</th><th>思想汇报</th><th>待办</th></tr>
           </thead>
           <tbody>
             <tr v-for="row in partyProgressList.slice(0, 30)" :key="row.studentId">
@@ -1060,7 +1344,29 @@ async function saveHonor() {
               <td>{{ row.name }}</td>
               <td>{{ row.className }}</td>
               <td>{{ row.currentStageName || row.currentKey }}</td>
+              <td>{{ row.stepProgress || "—" }}</td>
+              <td>{{ row.materialCount ?? 0 }}</td>
+              <td>{{ row.thoughtReportCount ?? 0 }}</td>
               <td>{{ (row.tasks || []).filter((t) => !t.done).length }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" v-if="leagueProgressList.length && [ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
+      <h3>入团进度一览</h3>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th>学号</th><th>姓名</th><th>班级</th><th>当前阶段</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in leagueProgressList.slice(0, 30)" :key="row.studentId">
+              <td>{{ row.studentId }}</td>
+              <td>{{ row.name }}</td>
+              <td>{{ row.className }}</td>
+              <td>{{ row.currentStageName || row.currentKey }}</td>
             </tr>
           </tbody>
         </table>
@@ -1297,6 +1603,16 @@ async function saveHonor() {
             <button type="button" @click="resetHonorForm">清空</button>
           </div>
         </form>
+        <h4 style="margin-top:20px">CSV 批量导入</h4>
+        <p class="muted">列名：标题、获奖人、年份（必填）；可选：类别、年级、专业、简介</p>
+        <div class="row wrap">
+          <input type="file" accept=".csv,text/csv" @change="onHonorImportFile" />
+          <button type="button" @click="previewHonorImport">预检</button>
+          <button type="button" class="primary" @click="commitHonorImport">确认导入</button>
+        </div>
+        <div v-if="honorImportResult?.errors?.length" class="stack compact" style="margin-top:12px">
+          <p v-for="err in honorImportResult.errors" :key="`${err.row}-${err.message}`" class="muted">第 {{ err.row }} 行：{{ err.message }}</p>
+        </div>
       </section>
 
       <section>
@@ -1345,9 +1661,10 @@ async function saveHonor() {
 
     <div class="section-title">高频未命中词</div>
     <div class="stack">
-      <div v-for="item in misses.slice(0, 5)" :key="item.keyword" class="card row between">
+      <div v-for="item in misses.slice(0, 20)" :key="item.keyword" class="card row between">
         <strong>{{ item.keyword }}</strong>
         <span class="tag">{{ item.count }} 次</span>
+        <span v-if="item.lastAt" class="muted">{{ formatTime(item.lastAt) }}</span>
         <button v-if="session.role === ROLES.TEACHER" @click="fillFromMiss(item)">转为知识</button>
       </div>
       <div v-if="!misses.length" class="empty card">暂无未命中词记录</div>

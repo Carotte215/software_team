@@ -13,6 +13,7 @@ from app.routers import (
     health,
     honors,
     knowledge,
+    league,
     notices,
     party,
     students,
@@ -53,6 +54,7 @@ app.include_router(templates.router, prefix="/api")
 app.include_router(files.router, prefix="/api")
 app.include_router(notices.router, prefix="/api")
 app.include_router(party.router, prefix="/api")
+app.include_router(league.router, prefix="/api")
 app.include_router(academic.router, prefix="/api")
 app.include_router(honors.router, prefix="/api")
 app.include_router(theory.router, prefix="/api")

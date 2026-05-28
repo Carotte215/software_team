@@ -41,6 +41,8 @@ class NoticePublish(BaseModel):
     target_rule: dict[str, Any] = Field(default_factory=lambda: {"kind": "all"}, alias="targetRule")
     source: str = "管理老师"
     scheduled_at: int = Field(default=0, alias="scheduledAt")
+    enable_email: bool = Field(default=False, alias="enableEmail")
+    enable_sms_sim: bool = Field(default=False, alias="enableSmsSim")
 
 
 class AcademicProgressPut(BaseModel):

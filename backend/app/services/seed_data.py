@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta, timezone
 
 FLOW_STAGES = [
-    {"key": "applicant", "name": "入党申请人", "desc": "递交申请书，完成谈话记录。", "order": 1},
-    {"key": "activist", "name": "入党积极分子", "desc": "培养教育不少于 1 年。", "order": 2},
-    {"key": "candidate", "name": "发展对象", "desc": "政审、公示、集中培训。", "order": 3},
-    {"key": "probationary", "name": "预备党员", "desc": "支部审批并进入预备期。", "order": 4},
-    {"key": "member", "name": "正式党员", "desc": "转正审批通过。", "order": 5},
+    {"key": "applicant", "name": "入党申请人", "desc": "接受教育引导，递交入党申请书，党组织派人谈话并留存记录。", "order": 1},
+    {"key": "activist", "name": "入党积极分子确定", "desc": "经团支部推优、支委会讨论并报党委备案，指定培养联系人，开展一年以上培养考察。", "order": 2},
+    {"key": "candidate", "name": "发展对象确定", "desc": "支委会听取意见后讨论，报党委备案；确定入党介绍人，完成政治审查与短期集中培训。", "order": 3},
+    {"key": "probationary", "name": "预备党员接收与转正", "desc": "党委预审、公示、支部大会接收预备党员；预备期内教育考察，期满提交转正申请并完成审批。", "order": 4},
+    {"key": "member", "name": "正式党员", "desc": "转正审批通过，材料归档，进入正式党员教育管理。", "order": 5},
 ]
 
 MODULES = [
@@ -29,15 +29,108 @@ KNOWLEDGE = [
     ("k_award", "奖助学金：资格、材料与时间线", "奖助政策", ["奖助学金", "贫困认定"], "以学院当年细则为准，困难认定需提交家庭经济信息采集表。", False),
     ("k_dorm", "宿舍调整：申请—审批—物业流转", "后勤事务", ["宿舍", "调整"], "向辅导员说明原因，经学院审批后进入物业调宿流程。", False),
     ("k_leave", "休学/复学：学籍规则与材料清单", "学籍事务", ["休学", "复学"], "按学校学籍管理规定提交申请与佐证材料。", False),
-    ("k_party", "入党申请人与积极分子材料说明", "党团事务", ["入党", "积极分子"], "递交申请书后，团支部推优，支部安排谈话并留存记录。", False),
+    ("k_party", "入党申请人与积极分子材料说明", "党团事务", ["入党", "积极分子"], "递交申请书后，团支部推优，支部安排谈话并留存记录；培养考察期一般不少于一年。", False),
     ("k_cert", "在读证明：抬头、份数与英文版", "证明模板", ["在读证明", "英文证明"], "提交申请时写清抬头、份数、是否需要英文版。", False),
     ("k_seal", "盖章申请：附件必传与涉密转线下", "行政事务", ["盖章", "用印"], "盖章申请必须上传材料，涉密内容备注后转线下流转。", True),
 ]
+
+KNOWLEDGE_BODIES = {
+    "k_award": """## 奖助学金办理要点
+
+1. **困难认定**：每年秋季开展，需在线填写家庭经济信息采集表并提交佐证（低保证、残疾证等视情况）。
+2. **国家奖学金/励志奖学金**：关注学院当年评选通知，一般要求 GPA 与综合表现达标，材料含申请表、成绩单、获奖证明。
+3. **时间节点**：以学院学生工作办公室当年发布的《奖助学金工作通知》为准，逾期不予受理。
+
+## 常见问题
+
+- 材料不齐会被退回补交，请在截止日期前完成。
+- 有疑问可联系辅导员或学院奖助中心（办公时间见学院官网）。""",
+    "k_dorm": """## 宿舍调整流程
+
+1. 向**辅导员**书面说明调宿原因（健康、学习、安全等）。
+2. 辅导员审核后报学院学生工作办公室备案。
+3. 学院同意后，由**物业管理中心**安排空床位与钥匙交接。
+4. 调宿完成后，在宿管系统更新床位信息。
+
+## 注意事项
+
+- 未经审批私自换宿将被记录并可能影响后续申请。
+- 期末与开学前为高峰期，请提前 1-2 周申请。""",
+    "k_leave": """## 休学
+
+- 适用：因病、创业、参军等需暂停学籍的情形。
+- 材料：休学申请书、家长知情同意书、医院诊断证明（因病）等。
+- 流程：辅导员 → 学院 → 教务处审批，审批通过后学籍状态变更为休学。
+
+## 复学
+
+- 须在休学期满或批准延长期内提出复学申请。
+- 材料：复学申请书、休学期间情况说明、健康证明（如适用）。
+- 复学后按学院安排编入相应年级班级。""",
+    "k_party": """## 入党申请人
+
+- 递交**手写或打印签名**的入党申请书至团支部或党支部。
+- 党组织应在 **1 个月内**派人谈话并留存谈话记录。
+
+## 入党积极分子
+
+- 经**团支部推优**、支委会讨论、报上级党委备案后确定。
+- 指定 1-2 名培养联系人，培养考察期一般**不少于 1 年**。
+- 每季度提交**思想汇报**（可参考知识库「思想汇报模板」）。
+
+## 在本平台
+
+- 「党团流程」页可查看 29 个官方环节与当前阶段待办。
+- 环节自勾后由辅导员/支部老师在「工作台」确认。""",
+    "k_cert": """## 在读证明
+
+- 填写**抬头单位全称**（如某某公司、某某 embassy）。
+- 注明所需**份数**及是否需**英文版**。
+- 通过「办事申请 → 证明申请 → 在读证明」提交，审批通过后可下载 PDF。
+
+## 英文版
+
+- 如需英文在读证明，在申请事由中注明，并确认姓名拼音与护照一致。""",
+    "k_seal": """## 盖章申请规范
+
+1. **必须上传**待盖章材料扫描件或 PDF（涉密除外）。
+2. 在备注中说明用印类型：学院公章 / 党委章 / 团委章等。
+3. **涉密或不宜线上流转**的材料，请备注「转线下」并携带纸质件至学院办公室。
+
+## 审批时效
+
+- 常规申请 2-3 个工作日；高峰期可能延长，请预留时间。""",
+}
+
+THOUGHT_REPORT_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"/><title>思想汇报</title>
+<style>
+body{font-family:SimSun,serif;padding:48px;line-height:2;font-size:16px;max-width:720px;margin:0 auto}
+h1{text-align:center;font-size:22px;margin-bottom:32px}
+.meta{margin-bottom:24px}
+p{text-indent:2em;margin:12px 0}
+.sign{margin-top:48px;text-align:right}
+</style></head>
+<body>
+<h1>思想汇报</h1>
+<div class="meta">
+<p style="text-indent:0">敬爱的党组织：</p>
+</div>
+<p>（请结合本季度学习、工作、生活实际，汇报对党的认识、入党动机、参加党团活动情况，以及存在的不足与改进方向。）</p>
+<p>……</p>
+<p>……</p>
+<p>……</p>
+<p style="text-indent:0">此致</p>
+<p style="text-indent:0">敬礼！</p>
+<p class="sign">汇报人：________<br/>________年____月____日</p>
+</body></html>"""
 
 TEMPLATES = [
     ("tpl_leave", "请假条（通用）", "日常请假", "docx"),
     ("tpl_budget", "学生活动经费预算表", "团学活动", "xlsx"),
     ("tpl_report", "思想汇报模板", "党团材料", "docx"),
+    ("tpl_party_cert", "党员证明模板", "党团证明", "docx"),
+    ("tpl_league_cert", "团员证明模板", "党团证明", "docx"),
 ]
 
 NOTICES = [
@@ -83,5 +176,34 @@ APPLICATION_TEMPLATES = [
 <p>请假事由：{{reason}}</p>
 <p>请假时间：{{startDate}} 至 {{endDate}}</p>
 <p>申请人签名：________　日期：{{generatedAt}}</p></body></html>""",
+    ),
+    (
+        "tpl_party_cert_app",
+        "党员证明",
+        "证明申请",
+        "党员证明",
+        """<!doctype html><html><head><meta charset="utf-8"/><title>党员证明</title>
+<style>body{font-family:SimSun,serif;padding:48px;line-height:2;font-size:16px}h1{text-align:center;font-size:22px}.seal{margin-top:80px;text-align:right}</style></head>
+<body>
+<h1>证　明</h1>
+<p>兹证明中国人民大学信息学院<strong>{{name}}</strong>，学号 <strong>{{studentId}}</strong>，身份证号 {{idCard}}，为我院 {{major}} 专业 {{grade}} 本科生，于 {{partyJoinDate}} 加入中国共产党，目前组织关系在我院党委 {{partyBranch}} 党支部。</p>
+<p>申请用途：{{reason}}</p>
+<p class="seal">联系人：{{contactName}}<br/>联系电话：{{contactPhone}}<br/>中国人民大学信息学院党委<br/>{{generatedAt}}</p>
+</body></html>""",
+    ),
+    (
+        "tpl_league_cert_app",
+        "团员证明",
+        "证明申请",
+        "团员证明",
+        """<!doctype html><html><head><meta charset="utf-8"/><title>团员证明</title>
+<style>body{font-family:SimSun,serif;padding:48px;line-height:2;font-size:16px}h1{text-align:center;font-size:22px}.seal{margin-top:80px;text-align:right}</style></head>
+<body>
+<h1>证　明</h1>
+<p>兹证明中国人民大学信息学院<strong>{{name}}</strong>，学号 <strong>{{studentId}}</strong>，身份证号 {{idCard}}，为我院 {{className}}，于 {{leagueJoinDate}} 加入中国共产主义青年团，团员编号：{{memberNo}}。</p>
+<p>申请用途：{{reason}}</p>
+<p>特此证明。</p>
+<p class="seal">联系人：{{contactName}}<br/>联系电话：{{contactPhone}}<br/>中国人民大学信息学院团委<br/>{{generatedAt}}</p>
+</body></html>""",
     ),
 ]

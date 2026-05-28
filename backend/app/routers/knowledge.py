@@ -4,10 +4,11 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.deps import CurrentSession, get_current_session
-from app.models import KnowledgeItem, KnowledgeMissKeyword, TemplateFile
+from app.models import KnowledgeFavorite, KnowledgeItem, KnowledgeMissKeyword, TemplateFile
 from app.schemas import KnowledgeCreate, KnowledgeOnlinePut, KnowledgeUpdate
 from app.services.common import audit, uid
 from app.services.file_storage import attachment_file_ids, cleanup_orphan_files
+from app.services.knowledge_engagement import favorite_ids, list_favorites, list_recent, list_trending, record_recent_view, toggle_favorite, trim_recent_views
 from app.services.permissions import COORDINATOR, TEACHER, require_roles
 from app.services.serializers import knowledge, template
 
@@ -30,12 +31,51 @@ def list_knowledge(
                 KnowledgeItem.title.ilike(like),
                 KnowledgeItem.summary.ilike(like),
                 KnowledgeItem.body.ilike(like),
+                KnowledgeItem.official_link.ilike(like),
             ),
         )
-    rows = db.scalars(stmt.order_by(KnowledgeItem.hit_count.desc(), KnowledgeItem.updated_at.desc())).all()
+    rows = db.scalars(stmt).all()
+    if q:
+        rows = rank_knowledge_rows(rows, q)
+    else:
+        rows = sorted(rows, key=lambda row: (-(row.hit_count or 0), row.updated_at or row.created_at), reverse=False)
     categories = ["全部", *db.scalars(select(KnowledgeItem.category).distinct()).all()]
     templates = db.scalars(select(TemplateFile).order_by(TemplateFile.name)).all()
-    return {"list": [knowledge(row, q=q) for row in rows], "categories": categories, "templates": [template(row) for row in templates]}
+    payload = {"list": [knowledge(row, q=q) for row in rows], "categories": categories, "templates": [template(row) for row in templates]}
+    if q and not rows:
+        payload["searchMeta"] = {
+            "noResult": True,
+            "hint": "未找到匹配的政策条目。建议换个关键词，或联系辅导员 / 学院学生工作办公室（010-62513007）咨询。",
+            "keyword": q,
+        }
+    return payload
+
+
+def rank_knowledge_rows(rows: list[KnowledgeItem], q: str) -> list[KnowledgeItem]:
+    """FR1-3：标准答案/标题/标签优先，而非简单按点击量。"""
+    needle = q.strip().lower()
+
+    def score(row: KnowledgeItem) -> tuple[int, int]:
+        title = (row.title or "").lower()
+        summary = (row.summary or "").lower()
+        body = (row.body or "").lower()
+        tags = [str(tag).lower() for tag in (row.tags or [])]
+        points = 0
+        if title == needle:
+            points += 100
+        elif needle in title:
+            points += 60
+        if any(needle in tag for tag in tags):
+            points += 40
+        if needle in summary:
+            points += 25
+        if row.official_link:
+            points += 15
+        if needle in body:
+            points += 10
+        return points, row.hit_count or 0
+
+    return sorted(rows, key=lambda row: score(row), reverse=True)
 
 
 @router.post("")
@@ -152,12 +192,52 @@ def record_miss(payload: dict, db: Session = Depends(get_db), session: CurrentSe
     return {"ok": True}
 
 
+@router.get("/favorites")
+def knowledge_favorites(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+    return {"list": list_favorites(db, session.student_id)}
+
+
+@router.get("/recent")
+def knowledge_recent(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+    return {"list": list_recent(db, session.student_id)}
+
+
+@router.get("/trending")
+def knowledge_trending(db: Session = Depends(get_db)) -> dict:
+    return {"list": list_trending(db)}
+
+
+@router.post("/favorites/{item_id}")
+def add_favorite(item_id: str, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+    try:
+        result = toggle_favorite(db, session.student_id, item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    audit(db, session, "knowledge_favorite_toggle", item_id, result)
+    db.commit()
+    return result
+
+
+@router.delete("/favorites/{item_id}")
+def remove_favorite(item_id: str, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+    row = db.get(KnowledgeFavorite, {"student_id": session.student_id, "item_id": item_id})
+    if row:
+        db.delete(row)
+        audit(db, session, "knowledge_favorite_remove", item_id)
+        db.commit()
+    return {"ok": True, "favorited": False}
+
+
 @router.get("/{item_id}")
 def get_knowledge(item_id: str, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
     row = db.get(KnowledgeItem, item_id)
     if not row:
         raise HTTPException(status_code=404, detail="knowledge not found")
     row.hit_count += 1
+    record_recent_view(db, session.student_id, item_id)
+    trim_recent_views(db, session.student_id)
     audit(db, session, "knowledge_read", item_id)
     db.commit()
-    return knowledge(row)
+    payload = knowledge(row)
+    payload["favorited"] = item_id in favorite_ids(db, session.student_id)
+    return payload

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.deps import CurrentSession, get_current_session
-from app.models import AcademicPlan, AcademicProgress, Application, AuditLog, KnowledgeItem, KnowledgeMissKeyword, Notice, NoticeBatch, SmsSimulation, Student
+from app.models import AcademicPlan, AcademicProgress, Application, AuditLog, KnowledgeItem, KnowledgeMissKeyword, LeagueProgress, Notice, NoticeBatch, PartyProgress, PartyStage, SmsSimulation, Student
 from app.services.permissions import scoped_student_ids
 from app.services.serializers import audit_log
 
@@ -85,7 +85,47 @@ def leader_dashboard(db: Session = Depends(get_db), session: CurrentSession = De
         "missKeywordsTop": knowledge_miss_rows(db, 5),
         "academicHighRiskStudents": count_high_risk_students(db),
         "batches": db.scalar(select(func.count()).select_from(NoticeBatch)) or 0,
+        "partyProgress": party_progress_stats(db),
+        "leagueProgress": league_progress_stats(db),
         "lastReset": None,
+    }
+
+
+def party_progress_stats(db: Session) -> dict:
+    stages = {row.stage_key: row.name for row in db.scalars(select(PartyStage)).all()}
+    if not stages:
+        from app.services.party_official_data import OFFICIAL_FLOW_STAGES
+
+        stages = {item["key"]: item["name"] for item in OFFICIAL_FLOW_STAGES}
+    by_stage: dict[str, int] = {}
+    pending_verify = 0
+    for row in db.scalars(select(PartyProgress)).all():
+        by_stage[row.current_key] = by_stage.get(row.current_key, 0) + 1
+        completed = set(row.completed_steps or [])
+        verified = set(row.verified_steps or [])
+        pending_verify += len(completed - verified)
+    return {
+        "total": sum(by_stage.values()),
+        "byStage": [{"key": key, "name": stages.get(key, key), "count": count} for key, count in sorted(by_stage.items())],
+        "pendingVerifySteps": pending_verify,
+    }
+
+
+def league_progress_stats(db: Session) -> dict:
+    from app.services.party_official_data import LEAGUE_FLOW_STAGES
+
+    stages = {item["key"]: item["name"] for item in LEAGUE_FLOW_STAGES}
+    by_stage: dict[str, int] = {}
+    pending_verify = 0
+    for row in db.scalars(select(LeagueProgress)).all():
+        by_stage[row.current_key] = by_stage.get(row.current_key, 0) + 1
+        completed = set(row.completed_steps or [])
+        verified = set(row.verified_steps or [])
+        pending_verify += len(completed - verified)
+    return {
+        "total": sum(by_stage.values()),
+        "byStage": [{"key": key, "name": stages.get(key, key), "count": count} for key, count in sorted(by_stage.items())],
+        "pendingVerifySteps": pending_verify,
     }
 
 
@@ -130,7 +170,7 @@ def export_audit_logs(db: Session = Depends(get_db), session: CurrentSession = D
 
 @router.get("/workbench/knowledge/misses")
 def knowledge_misses(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
-    if session.role not in {"teacher", "leader"}:
+    if session.role not in {"teacher", "leader", "coordinator"}:
         raise HTTPException(status_code=403, detail="forbidden")
     return {"list": knowledge_miss_rows(db, 50)}
 

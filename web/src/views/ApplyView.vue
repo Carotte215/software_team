@@ -1,5 +1,5 @@
 <script setup>
-import { inject, onMounted, reactive, ref } from "vue";
+import { computed, inject, onMounted, reactive, ref } from "vue";
 import { APPROVAL } from "../data/seed.js";
 import { formatTime } from "../utils.js";
 
@@ -15,17 +15,38 @@ const form = reactive({
   reason: "",
   startDate: "",
   endDate: "",
+  idCard: "",
+  partyJoinDate: "",
+  partyBranch: "",
+  leagueJoinDate: "",
+  memberNo: "",
+  offlineHandoff: false,
   files: [],
+});
+
+const LEAVE_SUBTYPES = ["事假", "病假", "其他"];
+const SEAL_SUBTYPES = ["行政用印", "社团用印", "其他"];
+
+const showCertFields = computed(() => form.type === "证明申请" && ["党员证明", "团员证明"].includes(form.subtype));
+const showLeaveDates = computed(() => form.type === "请假申请");
+const isSeal = computed(() => form.type === "盖章申请");
+const officialGuide = ref(null);
+const certHints = computed(() => {
+  if (form.subtype === "党员证明") return officialGuide.value?.certFields?.party || [];
+  if (form.subtype === "团员证明") return officialGuide.value?.certFields?.league || [];
+  return [];
 });
 
 onMounted(load);
 
 async function load() {
-  const [res, draft] = await Promise.all([
+  const [res, draft, guide] = await Promise.all([
     api.listApplications(),
     api.getApplicationDraft().catch(() => null),
+    api.getPartyOfficialGuide().catch(() => null),
   ]);
   applications.value = res.list || [];
+  officialGuide.value = guide;
   if (draft && !form.id) fillForm(draft);
 }
 
@@ -59,9 +80,54 @@ async function buildPayload() {
       reason: form.reason,
       startDate: form.startDate,
       endDate: form.endDate,
+      idCard: form.idCard,
+      partyJoinDate: form.partyJoinDate,
+      partyBranch: form.partyBranch,
+      leagueJoinDate: form.leagueJoinDate,
+      memberNo: form.memberNo,
+      offlineHandoff: form.offlineHandoff,
     },
     attachments,
   };
+}
+
+function validateForm() {
+  if (form.type === "证明申请") {
+    const certErr = validateCertForm();
+    if (certErr) return certErr;
+    if (!form.reason.trim()) return "请填写申请说明";
+    return "";
+  }
+  if (form.type === "请假申请") {
+    if (!form.reason.trim()) return "请假须填写事由";
+    if (!form.startDate || !form.endDate) return "请假须填写起止日期";
+    if (form.startDate > form.endDate) return "开始日期不能晚于结束日期";
+    return "";
+  }
+  if (form.type === "盖章申请") {
+    if (!form.reason.trim()) return "请填写用印说明";
+    if (!form.files.length) return "盖章申请须上传附件";
+    if (form.offlineHandoff && !form.reason.includes("线下")) {
+      return "涉密转线下请在说明中备注线下流转方式";
+    }
+    return "";
+  }
+  return "";
+}
+
+function validateCertForm() {
+  if (form.type !== "证明申请") return "";
+  if (form.subtype === "党员证明") {
+    if (!form.idCard.trim()) return "党员证明须填写身份证号";
+    if (!form.partyJoinDate) return "党员证明须填写入党时间";
+    if (!form.partyBranch.trim()) return "党员证明须填写所在党支部";
+  }
+  if (form.subtype === "团员证明") {
+    if (!form.idCard.trim()) return "团员证明须填写身份证号";
+    if (!form.leagueJoinDate) return "团员证明须填写入团时间";
+    if (!form.memberNo.trim()) return "团员证明须填写团员编号";
+  }
+  return "";
 }
 
 function fillForm(item) {
@@ -73,6 +139,12 @@ function fillForm(item) {
     reason: item.form?.reason || "",
     startDate: item.form?.startDate || "",
     endDate: item.form?.endDate || "",
+    idCard: item.form?.idCard || "",
+    partyJoinDate: item.form?.partyJoinDate || "",
+    partyBranch: item.form?.partyBranch || "",
+    leagueJoinDate: item.form?.leagueJoinDate || "",
+    memberNo: item.form?.memberNo || "",
+    offlineHandoff: Boolean(item.form?.offlineHandoff),
     files: item.attachments || [],
   });
   selected.value = item;
@@ -87,8 +159,20 @@ function resetForm() {
     reason: "",
     startDate: "",
     endDate: "",
+    idCard: "",
+    partyJoinDate: "",
+    partyBranch: "",
+    leagueJoinDate: "",
+    memberNo: "",
+    offlineHandoff: false,
     files: [],
   });
+}
+
+function onTypeChange() {
+  if (form.type === "证明申请") form.subtype = "在读证明";
+  else if (form.type === "请假申请") form.subtype = "事假";
+  else if (form.type === "盖章申请") form.subtype = "行政用印";
 }
 
 async function saveDraft() {
@@ -101,8 +185,13 @@ async function saveDraft() {
 const previewHtml = ref("");
 
 async function previewDocument() {
-  if (!form.reason.trim()) {
-    toast("请先填写申请说明");
+  const err = validateForm();
+  if (err) {
+    toast(err);
+    return;
+  }
+  if (form.type === "盖章申请") {
+    toast("盖章申请无需文档预览，请直接提交");
     return;
   }
   const payload = await buildPayload();
@@ -112,12 +201,9 @@ async function previewDocument() {
 }
 
 async function submit() {
-  if (!form.reason.trim()) {
-    toast("请填写申请说明");
-    return;
-  }
-  if (form.type === "盖章申请" && form.files.length === 0) {
-    toast("盖章申请须上传附件");
+  const err = validateForm();
+  if (err) {
+    toast(err);
     return;
   }
   const payload = await buildPayload();
@@ -170,7 +256,7 @@ async function downloadDocument(item, format = "pdf") {
         </div>
         <label>
           申请类型
-          <select v-model="form.type">
+          <select v-model="form.type" @change="onTypeChange">
             <option>证明申请</option>
             <option>请假申请</option>
             <option>盖章申请</option>
@@ -178,24 +264,66 @@ async function downloadDocument(item, format = "pdf") {
         </label>
         <label>
           子类
-          <input v-model="form.subtype" />
+          <select v-if="form.type === '证明申请'" v-model="form.subtype">
+            <option>在读证明</option>
+            <option>党员证明</option>
+            <option>团员证明</option>
+          </select>
+          <select v-else-if="form.type === '请假申请'" v-model="form.subtype">
+            <option v-for="item in LEAVE_SUBTYPES" :key="item">{{ item }}</option>
+          </select>
+          <select v-else v-model="form.subtype">
+            <option v-for="item in SEAL_SUBTYPES" :key="item">{{ item }}</option>
+          </select>
         </label>
         <label class="span-2">
           申请说明
           <textarea v-model="form.reason" placeholder="请填写事由；涉密内容请备注并转线下流程"></textarea>
         </label>
+        <template v-if="showCertFields">
+          <div class="span-2 card muted cert-hints">
+            <strong>官方证明模板填写要点</strong>
+            <p v-for="field in certHints" :key="field.key">{{ field.label }}：{{ field.hint }}</p>
+            <p v-if="officialGuide?.meta">开具单位：{{ form.subtype === "党员证明" ? officialGuide.meta.partyOrg : officialGuide.meta.leagueOrg }} · 咨询 {{ officialGuide.meta.contactPhone }}</p>
+          </div>
+          <label>
+            身份证号
+            <input v-model="form.idCard" placeholder="用于证明正文填写" />
+          </label>
+          <label v-if="form.subtype === '党员证明'">
+            入党时间
+            <input v-model="form.partyJoinDate" type="date" />
+          </label>
+          <label v-if="form.subtype === '党员证明'">
+            所在党支部
+            <input v-model="form.partyBranch" placeholder="如：学生第一党支部" />
+          </label>
+          <label v-if="form.subtype === '团员证明'">
+            入团时间
+            <input v-model="form.leagueJoinDate" type="date" />
+          </label>
+          <label v-if="form.subtype === '团员证明'">
+            团员编号
+            <input v-model="form.memberNo" />
+          </label>
+        </template>
         <label>
           开始日期
-          <input v-model="form.startDate" type="date" />
+          <input v-model="form.startDate" type="date" :required="showLeaveDates" />
         </label>
         <label>
           结束日期
-          <input v-model="form.endDate" type="date" />
+          <input v-model="form.endDate" type="date" :required="showLeaveDates" />
+        </label>
+        <label v-if="isSeal" class="span-2 row">
+          <input v-model="form.offlineHandoff" type="checkbox" />
+          <span>内容涉密，转线下审批（须在说明中备注）</span>
         </label>
         <label class="span-2">
           附件
           <input type="file" multiple @change="onFiles" />
-          <span class="muted" v-if="form.files.length">已选择/保留 {{ form.files.length }} 个附件</span>
+          <span class="muted" v-if="isSeal">盖章申请附件必传</span>
+          <span class="muted" v-else-if="form.files.length">已选择/保留 {{ form.files.length }} 个附件</span>
         </label>
         <div class="span-2 row">
           <button type="button" @click="saveDraft">保存草稿</button>

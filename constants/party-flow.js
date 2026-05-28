@@ -3,11 +3,11 @@
  * 与需求状态图节点名称对齐（可随甲方确认再改文案）。
  */
 module.exports.DEFAULT_STAGES = [
-  { key: 'applicant', name: '入党申请人', order: 1, desc: '提交入党申请书，完成团组织推优材料' },
-  { key: 'activist', name: '积极分子', order: 2, desc: '培养教育满一年，按时提交思想汇报与实践记录' },
-  { key: 'candidate', name: '发展对象', order: 3, desc: '政审材料、公示与支部审查，按要求参加集中培训' },
-  { key: 'probationary', name: '预备党员', order: 4, desc: '预备期一年，季度汇报与考察登记表归档' },
-  { key: 'full', name: '正式党员', order: 5, desc: '转正大会、党委审批，进入正式党员教育管理' },
+  { key: 'applicant', name: '入党申请人', order: 1, desc: '接受教育引导，递交入党申请书，党组织派人谈话并留存记录' },
+  { key: 'activist', name: '入党积极分子确定', order: 2, desc: '经团支部推优、支委会讨论并报党委备案，指定培养联系人，开展一年以上培养考察' },
+  { key: 'candidate', name: '发展对象确定', order: 3, desc: '支委会听取意见后讨论，报党委备案；确定入党介绍人，完成政治审查与短期集中培训' },
+  { key: 'probationary', name: '预备党员接收与转正', order: 4, desc: '党委预审、公示、支部大会接收预备党员；预备期内教育考察，期满提交转正申请并完成审批' },
+  { key: 'member', name: '正式党员', order: 5, desc: '转正审批通过，材料归档，进入正式党员教育管理' },
 ];
 
 module.exports.DEFAULT_RULES = [
