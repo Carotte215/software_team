@@ -5,12 +5,21 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from app.models import Student
+from app.services.academic_catalog import ensure_academic_official_content
 from app.services.passwords import default_initial_password, hash_password
 from app.services.party_bootstrap import ensure_party_official_content
 from app.services.seed_data import STUDENTS
+from app.services.scholarship_catalog import ensure_scholarship_catalog
 
 
 def ensure_schema(engine: Engine) -> None:
+    from app.db.session import Base
+
+    # PostgreSQL remains the target database. create_all is intentionally kept
+    # here as a no-op for existing tables and a safety net for newly added ones;
+    # the ALTER patches below handle old tables that predate current models.
+    Base.metadata.create_all(bind=engine)
+
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
     with engine.begin() as conn:
@@ -70,8 +79,7 @@ def ensure_schema(engine: Engine) -> None:
         ):
             conn.execute(text(ddl))
 
-        # 上面可能新建了表，必须重新 inspect，否则漏掉 ADD COLUMN
-        inspector = inspect(engine)
+        inspector = inspect(conn)
         tables = set(inspector.get_table_names())
 
         if "party_progress" in tables:
@@ -94,11 +102,25 @@ def ensure_schema(engine: Engine) -> None:
 
     backfill_student_defaults(engine)
     sync_party_official_content(engine)
+    sync_academic_official_content(engine)
+    sync_scholarship_catalog(engine)
 
 
 def sync_party_official_content(engine: Engine) -> None:
     with Session(engine) as db:
         ensure_party_official_content(db)
+
+
+def sync_academic_official_content(engine: Engine) -> None:
+    with Session(engine) as db:
+        ensure_academic_official_content(db)
+        db.commit()
+
+
+def sync_scholarship_catalog(engine: Engine) -> None:
+    with Session(engine) as db:
+        ensure_scholarship_catalog(db)
+        db.commit()
 
 
 def backfill_student_defaults(engine: Engine) -> None:
