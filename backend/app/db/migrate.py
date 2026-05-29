@@ -11,6 +11,13 @@ from app.services.seed_data import STUDENTS
 
 
 def ensure_schema(engine: Engine) -> None:
+    from app.db.session import Base
+
+    # PostgreSQL remains the target database. create_all is intentionally kept
+    # here as a no-op for existing tables and a safety net for newly added ones;
+    # the ALTER patches below handle old tables that predate current models.
+    Base.metadata.create_all(bind=engine)
+
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
     with engine.begin() as conn:
@@ -57,7 +64,7 @@ def ensure_schema(engine: Engine) -> None:
         for ddl in (
             "CREATE TABLE IF NOT EXISTS party_timeline_rules (stage_key VARCHAR(64) PRIMARY KEY, duration_days INTEGER DEFAULT 0, remind_before_days INTEGER DEFAULT 0, material TEXT DEFAULT '', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
             "CREATE TABLE IF NOT EXISTS party_stages (stage_key VARCHAR(64) PRIMARY KEY, name VARCHAR(64) NOT NULL, description TEXT DEFAULT '', sort_order INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
-            "CREATE TABLE IF NOT EXISTS league_progress (student_id VARCHAR(32) PRIMARY KEY, current_key VARCHAR(64) DEFAULT 'l_apply', history JSONB DEFAULT '[]', tasks JSONB DEFAULT '[]', completed_steps JSONB DEFAULT '[]', verified_steps JSONB DEFAULT '[]', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
+            "CREATE TABLE IF NOT EXISTS league_progress (student_id VARCHAR(32) PRIMARY KEY, current_key VARCHAR(64) DEFAULT 'l_apply', history JSONB DEFAULT '[]', tasks JSONB DEFAULT '[]', completed_steps JSONB DEFAULT '[]', verified_steps JSONB DEFAULT '[]', step_materials JSONB DEFAULT '{}', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
             "CREATE TABLE IF NOT EXISTS league_timeline_rules (stage_key VARCHAR(64) PRIMARY KEY, duration_days INTEGER DEFAULT 0, remind_before_days INTEGER DEFAULT 0, material TEXT DEFAULT '', created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
             "CREATE TABLE IF NOT EXISTS knowledge_favorites (student_id VARCHAR(32) NOT NULL, item_id VARCHAR(64) NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), PRIMARY KEY (student_id, item_id))",
             "CREATE TABLE IF NOT EXISTS knowledge_recent_views (id SERIAL PRIMARY KEY, student_id VARCHAR(32) NOT NULL, item_id VARCHAR(64) NOT NULL, viewed_at TIMESTAMPTZ DEFAULT NOW(), created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
@@ -69,6 +76,9 @@ def ensure_schema(engine: Engine) -> None:
             "CREATE TABLE IF NOT EXISTS party_calendar_events (id VARCHAR(64) PRIMARY KEY, event_date VARCHAR(16) DEFAULT '', title VARCHAR(200) DEFAULT '', note TEXT DEFAULT '', tags JSONB DEFAULT '[]', online BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())",
         ):
             conn.execute(text(ddl))
+
+        inspector = inspect(conn)
+        tables = set(inspector.get_table_names())
 
         if "party_progress" in tables:
             cols = {col["name"] for col in inspector.get_columns("party_progress")}

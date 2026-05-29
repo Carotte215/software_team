@@ -78,12 +78,19 @@ watchEffect(() => {
 async function loginRemote() {
   loginBusy.value = true;
   try {
-    const result = await api.login(loginForm.value);
-    setSession({ studentId: result.studentId, role: result.role, token: result.token });
+    const credentials = {
+      studentId: loginForm.value.studentId.trim(),
+      password: loginForm.value.password,
+    };
+    const result = await api.login(credentials);
+    const nextSession = { studentId: result.studentId, role: result.role, token: result.token };
+    setSession(nextSession);
+    session.value = nextSession;
+    loginForm.value.password = "";
     if (!canAccessRoute(route.value, result.role)) go("home");
     showToast("登录成功");
   } catch (error) {
-    showToast("登录失败，请检查身份与口令");
+    showToast(error?.message ? `登录失败：${error.message}` : "登录失败，请检查身份与口令");
   } finally {
     loginBusy.value = false;
   }
@@ -123,6 +130,7 @@ function reloadShell() {
           :key="item.id"
           href="#"
           :class="{ active: activeRoute === item.id }"
+          :aria-current="activeRoute === item.id ? 'page' : undefined"
           @click.prevent="go(item.id)"
         >
           {{ item.label }}
@@ -132,7 +140,10 @@ function reloadShell() {
 
     <main class="main">
       <div class="topbar">
-      <h1 class="page-title">{{ currentTitle }}</h1>
+        <div>
+          <h1 class="page-title">{{ currentTitle }}</h1>
+          <p class="page-subtitle">学院学生事务、党团流程与成长档案统一入口</p>
+        </div>
         <div class="session-panel">
           <span class="tag green">
             数据源 正式服务
@@ -163,7 +174,9 @@ function reloadShell() {
       v-for="item in mobileRoutes"
       :key="item.id"
       href="#"
+      :title="item.label"
       :class="{ active: activeRoute === item.id }"
+      :aria-current="activeRoute === item.id ? 'page' : undefined"
       @click.prevent="go(item.id)"
     >
       {{ item.label.slice(0, 4) }}

@@ -208,7 +208,7 @@ def publish_notice(payload: NoticePublish, db: Session = Depends(get_db), sessio
 
     current = db.get(Student, session.student_id)
 
-    targets = [s for s in students if match_rule(payload.target_rule, s, session, current)]
+    targets = [s for s in students if match_rule(db, payload.target_rule, s, session, current)]
 
     target_rule = {
 
@@ -359,7 +359,7 @@ def run_scheduled_dispatch(db: Session, session: CurrentSession) -> dict:
 
         current = db.get(Student, session.student_id)
 
-        targets = [s for s in db.scalars(select(Student)).all() if match_rule(row.target_rule, s, session, current)]
+        targets = [s for s in db.scalars(select(Student)).all() if match_rule(db, row.target_rule, s, session, current)]
 
         channels = (row.target_rule or {}).get("_channels", {})
         row.channels = dispatch_notice(
@@ -419,7 +419,7 @@ def batch_with_read_stats(db: Session, row: NoticeBatch) -> dict:
 
 
 
-def match_rule(rule: dict, student: Student, session: CurrentSession, current: Student | None) -> bool:
+def match_rule(db: Session, rule: dict, student: Student, session: CurrentSession, current: Student | None) -> bool:
 
     if session.role == "coordinator":
 
@@ -474,5 +474,4 @@ def match_rule(rule: dict, student: Student, session: CurrentSession, current: S
             return str((student.extension or {}).get(ext_key, "")) == ext_val
 
     return True
-
 

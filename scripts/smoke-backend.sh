@@ -57,45 +57,46 @@ fi
 
 PYTHONPATH=backend python3 - <<'PY'
 import os
+
+os.environ.setdefault("AUTH_MODE", "header")
 from fastapi.testclient import TestClient
 from app.main import app
 
-os.environ.setdefault("AUTH_MODE", "header")
-client = TestClient(app)
-for method, path in [("GET", "/health"), ("GET", "/api/runtime"), ("GET", "/api/knowledge")]:
-    res = client.request(method, path)
-    print(method, path, res.status_code)
-    if res.status_code >= 400:
-        raise SystemExit(res.text)
+with TestClient(app) as client:
+    for method, path in [("GET", "/health"), ("GET", "/api/runtime"), ("GET", "/api/knowledge")]:
+        res = client.request(method, path)
+        print(method, path, res.status_code)
+        if res.status_code >= 400:
+            raise SystemExit(res.text)
 
-login = client.post("/api/auth/login", json={"studentId": "2024201581", "password": "Stu@201581"})
-print("POST", "/api/auth/login", login.status_code)
-if login.status_code >= 400:
-    raise SystemExit(login.text)
-token = login.json()["token"]
-session = client.get("/api/session", headers={"Authorization": f"Bearer {token}"})
-print("GET", "/api/session bearer", session.status_code)
-if session.status_code >= 400:
-    raise SystemExit(session.text)
+    login = client.post("/api/auth/login", json={"studentId": "2024201581", "password": "Stu@201581"})
+    print("POST", "/api/auth/login", login.status_code)
+    if login.status_code >= 400:
+        raise SystemExit(login.text)
+    token = login.json()["token"]
+    session = client.get("/api/session", headers={"Authorization": f"Bearer {token}"})
+    print("GET", "/api/session bearer", session.status_code)
+    if session.status_code >= 400:
+        raise SystemExit(session.text)
 
-refresh = client.post("/api/auth/refresh", headers={"Authorization": f"Bearer {token}"})
-print("POST", "/api/auth/refresh", refresh.status_code)
-if refresh.status_code >= 400:
-    raise SystemExit(refresh.text)
+    refresh = client.post("/api/auth/refresh", headers={"Authorization": f"Bearer {token}"})
+    print("POST", "/api/auth/refresh", refresh.status_code)
+    if refresh.status_code >= 400:
+        raise SystemExit(refresh.text)
 
-teacher = client.post("/api/auth/login", json={"studentId": "2022200999", "password": os.environ.get("SMOKE_TEACHER_PASSWORD", "Stu@200999")})
-print("POST", "/api/auth/login teacher", teacher.status_code)
-if teacher.status_code >= 400:
-    raise SystemExit(teacher.text)
-t_token = teacher.json()["token"]
-for method, path in [
-    ("GET", "/api/knowledge/export"),
-    ("GET", "/api/workbench/applications/export"),
-    ("GET", "/api/audit/logs/export"),
-    ("GET", "/api/workbench/party/progress"),
-]:
-    res = client.request(method, path, headers={"Authorization": f"Bearer {t_token}"})
-    print(method, path, res.status_code)
-    if res.status_code >= 400:
-        raise SystemExit(res.text)
+    teacher = client.post("/api/auth/login", json={"studentId": "2022200999", "password": os.environ.get("SMOKE_TEACHER_PASSWORD", "Stu@200999")})
+    print("POST", "/api/auth/login teacher", teacher.status_code)
+    if teacher.status_code >= 400:
+        raise SystemExit(teacher.text)
+    t_token = teacher.json()["token"]
+    for method, path in [
+        ("GET", "/api/knowledge/export"),
+        ("GET", "/api/workbench/applications/export"),
+        ("GET", "/api/audit/logs/export"),
+        ("GET", "/api/workbench/party/progress"),
+    ]:
+        res = client.request(method, path, headers={"Authorization": f"Bearer {t_token}"})
+        print(method, path, res.status_code)
+        if res.status_code >= 400:
+            raise SystemExit(res.text)
 PY
