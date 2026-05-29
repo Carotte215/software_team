@@ -73,27 +73,6 @@ watchEffect(() => {
   document.title = `${currentTitle.value} - 学院学生综合服务`;
 });
 
-async function loginRemote() {
-  loginBusy.value = true;
-  try {
-    const credentials = {
-      studentId: loginForm.value.studentId.trim(),
-      password: loginForm.value.password,
-    };
-    const result = await api.login(credentials);
-    const nextSession = { studentId: result.studentId, role: result.role, token: result.token };
-    setSession(nextSession);
-    session.value = nextSession;
-    loginForm.value.password = "";
-    if (!canAccessRoute(route.value, result.role)) go("home");
-    showToast("登录成功");
-  } catch (error) {
-    showToast(error?.message ? `登录失败：${error.message}` : "登录失败，请检查身份与口令");
-  } finally {
-    loginBusy.value = false;
-  }
-}
-
 function logoutRemote() {
   setSession({ studentId: "", role: "student", token: "" });
   go("home");
@@ -130,6 +109,7 @@ function reloadShell() {
             :key="item.id"
             href="#"
             :class="{ active: activeRoute === item.id }"
+            :aria-current="activeRoute === item.id ? 'page' : undefined"
             @click.prevent="go(item.id)"
           >
             {{ item.label }}
@@ -139,49 +119,14 @@ function reloadShell() {
 
       <main class="main">
         <div class="topbar">
-        <h1 class="page-title">{{ currentTitle }}</h1>
+          <div>
+            <h1 class="page-title">{{ currentTitle }}</h1>
+            <p class="page-subtitle">学院学生事务、党团流程与成长档案统一入口</p>
+          </div>
           <div class="session-panel">
             <span class="tag green">
               数据源 正式服务
             </span>
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-title">学院学生综合服务与党团管理平台</div>
-        <div class="brand-sub">学生事务 · 党团管理 · 综合服务</div>
-      </div>
-      <nav class="nav">
-        <a
-          v-for="item in visibleNavRoutes"
-          :key="item.id"
-          href="#"
-          :class="{ active: activeRoute === item.id }"
-          :aria-current="activeRoute === item.id ? 'page' : undefined"
-          @click.prevent="go(item.id)"
-        >
-          {{ item.label }}
-        </a>
-      </nav>
-    </aside>
-
-    <main class="main">
-      <div class="topbar">
-        <div>
-          <h1 class="page-title">{{ currentTitle }}</h1>
-          <p class="page-subtitle">学院学生事务、党团流程与成长档案统一入口</p>
-        </div>
-        <div class="session-panel">
-          <span class="tag green">
-            数据源 正式服务
-          </span>
-          <template v-if="!session.token">
-            <input v-model="loginForm.studentId" placeholder="请输入学号" />
-            <input v-model="loginForm.password" type="password" placeholder="请输入登录密码" />
-            <button :disabled="loginBusy" @click="loginRemote">
-              {{ loginBusy ? "登录中" : "登录" }}
-            </button>
-          </template>
-          <template v-else>
             <span class="tag gray">{{ roleLabel }}</span>
             <span class="tag gray">{{ session.studentId }}</span>
             <button @click="logoutRemote">退出</button>
@@ -199,32 +144,15 @@ function reloadShell() {
         v-for="item in mobileRoutes"
         :key="item.id"
         href="#"
+        :title="item.label"
         :class="{ active: activeRoute === item.id }"
+        :aria-current="activeRoute === item.id ? 'page' : undefined"
         @click.prevent="go(item.id)"
       >
         {{ item.label.slice(0, 4) }}
       </a>
     </nav>
   </template>
-      <div class="view-stage" :key="activeRoute">
-        <component :is="currentView" />
-      </div>
-    </main>
-  </div>
-
-  <nav class="mobile-tabs">
-    <a
-      v-for="item in mobileRoutes"
-      :key="item.id"
-      href="#"
-      :title="item.label"
-      :class="{ active: activeRoute === item.id }"
-      :aria-current="activeRoute === item.id ? 'page' : undefined"
-      @click.prevent="go(item.id)"
-    >
-      {{ item.label.slice(0, 4) }}
-    </a>
-  </nav>
 
   <div id="toast-root">
     <div v-if="toastText" class="toast">{{ toastText }}</div>
