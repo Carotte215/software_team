@@ -15,12 +15,11 @@ import AcademicView from "./views/AcademicView.vue";
 import ProfileView from "./views/ProfileView.vue";
 import WorkbenchView from "./views/WorkbenchView.vue";
 import HelpView from "./views/HelpView.vue";
+import LoginView from "./views/LoginView.vue";
 
 const route = ref(readRoute());
 const session = ref(getSession());
 const toastText = ref("");
-const loginBusy = ref(false);
-const loginForm = ref({ studentId: session.value.studentId, password: "" });
 
 const api = createApi(session);
 const apiConfig = ref(getApiConfig());
@@ -61,7 +60,6 @@ window.addEventListener("sessionchange", () => {
 
 window.addEventListener("authrequired", () => {
   setSession({ studentId: "", role: "student", token: "" });
-  loginForm.value = { studentId: "", password: "" };
   go("home");
   showToast("登录已过期，请重新登录");
 });
@@ -75,23 +73,8 @@ watchEffect(() => {
   document.title = `${currentTitle.value} - 学院学生综合服务`;
 });
 
-async function loginRemote() {
-  loginBusy.value = true;
-  try {
-    const result = await api.login(loginForm.value);
-    setSession({ studentId: result.studentId, role: result.role, token: result.token });
-    if (!canAccessRoute(route.value, result.role)) go("home");
-    showToast("登录成功");
-  } catch (error) {
-    showToast("登录失败，请检查身份与口令");
-  } finally {
-    loginBusy.value = false;
-  }
-}
-
 function logoutRemote() {
   setSession({ studentId: "", role: "student", token: "" });
-  loginForm.value = { studentId: "", password: "" };
   go("home");
   showToast("已退出登录");
 }
@@ -106,69 +89,64 @@ function showToast(message) {
 
 function reloadShell() {
   session.value = getSession();
-  loginForm.value.studentId = session.value.studentId;
 }
 </script>
 
 <template>
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-title">学院学生综合服务与党团管理平台</div>
-        <div class="brand-sub">学生事务 · 党团管理 · 综合服务</div>
-      </div>
-      <nav class="nav">
-        <a
-          v-for="item in visibleNavRoutes"
-          :key="item.id"
-          href="#"
-          :class="{ active: activeRoute === item.id }"
-          @click.prevent="go(item.id)"
-        >
-          {{ item.label }}
-        </a>
-      </nav>
-    </aside>
+  <template v-if="!session.token">
+    <LoginView />
+  </template>
+  <template v-else>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-title">学院学生综合服务与党团管理平台</div>
+          <div class="brand-sub">学生事务 · 党团管理 · 综合服务</div>
+        </div>
+        <nav class="nav">
+          <a
+            v-for="item in visibleNavRoutes"
+            :key="item.id"
+            href="#"
+            :class="{ active: activeRoute === item.id }"
+            @click.prevent="go(item.id)"
+          >
+            {{ item.label }}
+          </a>
+        </nav>
+      </aside>
 
-    <main class="main">
-      <div class="topbar">
-      <h1 class="page-title">{{ currentTitle }}</h1>
-        <div class="session-panel">
-          <span class="tag green">
-            数据源 正式服务
-          </span>
-          <template v-if="!session.token">
-            <input v-model="loginForm.studentId" placeholder="请输入学号" />
-            <input v-model="loginForm.password" type="password" placeholder="请输入登录密码" />
-            <button :disabled="loginBusy" @click="loginRemote">
-              {{ loginBusy ? "登录中" : "登录" }}
-            </button>
-          </template>
-          <template v-else>
+      <main class="main">
+        <div class="topbar">
+        <h1 class="page-title">{{ currentTitle }}</h1>
+          <div class="session-panel">
+            <span class="tag green">
+              数据源 正式服务
+            </span>
             <span class="tag gray">{{ roleLabel }}</span>
             <span class="tag gray">{{ session.studentId }}</span>
             <button @click="logoutRemote">退出</button>
-          </template>
+          </div>
         </div>
-      </div>
 
-      <div class="view-stage" :key="activeRoute">
-        <component :is="currentView" />
-      </div>
-    </main>
-  </div>
+        <div class="view-stage" :key="activeRoute">
+          <component :is="currentView" />
+        </div>
+      </main>
+    </div>
 
-  <nav class="mobile-tabs">
-    <a
-      v-for="item in mobileRoutes"
-      :key="item.id"
-      href="#"
-      :class="{ active: activeRoute === item.id }"
-      @click.prevent="go(item.id)"
-    >
-      {{ item.label.slice(0, 4) }}
-    </a>
-  </nav>
+    <nav class="mobile-tabs">
+      <a
+        v-for="item in mobileRoutes"
+        :key="item.id"
+        href="#"
+        :class="{ active: activeRoute === item.id }"
+        @click.prevent="go(item.id)"
+      >
+        {{ item.label.slice(0, 4) }}
+      </a>
+    </nav>
+  </template>
 
   <div id="toast-root">
     <div v-if="toastText" class="toast">{{ toastText }}</div>
