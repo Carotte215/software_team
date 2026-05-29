@@ -152,7 +152,9 @@ function reloadShell() {
         </div>
       </div>
 
-      <component :is="currentView" />
+      <div class="view-stage" :key="activeRoute">
+        <component :is="currentView" />
+      </div>
     </main>
   </div>
 
