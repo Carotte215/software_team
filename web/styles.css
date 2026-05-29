@@ -60,6 +60,19 @@ body {
   text-rendering: geometricPrecision;
 }
 
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(37, 99, 235, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37, 99, 235, 0.045) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent 68%);
+  content: "";
+}
+
 button,
 input,
 select,
@@ -68,6 +81,7 @@ textarea {
 }
 
 button {
+  position: relative;
   min-height: 40px;
   border: 1px solid rgba(37, 99, 235, 0.18);
   border-radius: 16px;
@@ -83,12 +97,22 @@ button {
     border-color 0.22s ease,
     background 0.22s ease,
     color 0.22s ease;
+  overflow: hidden;
 }
 
 button:hover:not(:disabled) {
   border-color: rgba(37, 99, 235, 0.38);
   box-shadow: 0 16px 34px rgba(37, 99, 235, 0.14);
   transform: translateY(-2px);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.22);
+  outline-offset: 3px;
 }
 
 button:active:not(:disabled) {
@@ -263,6 +287,7 @@ pre {
   font-size: 14px;
   font-weight: 800;
   text-decoration: none;
+  overflow: hidden;
   transition:
     transform 0.22s cubic-bezier(.2,.9,.2,1.12),
     background 0.22s ease,
@@ -323,12 +348,29 @@ pre {
   -webkit-backdrop-filter: blur(24px) saturate(160%);
 }
 
+.topbar::after {
+  position: absolute;
+  right: 26px;
+  bottom: -1px;
+  left: 26px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.26), rgba(6, 182, 212, 0.2), transparent);
+  content: "";
+}
+
 .page-title {
   margin: 0;
   color: var(--text);
   font-size: clamp(22px, 2.2vw, 30px);
   font-weight: 900;
   letter-spacing: 0;
+}
+
+.page-subtitle {
+  margin: 6px 0 0 28px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .page-title::before {
@@ -351,6 +393,16 @@ pre {
   flex-wrap: wrap;
 }
 
+.session-panel .tag.green::before {
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.12);
+  content: "";
+}
+
 .session-panel input,
 .session-panel select {
   width: auto;
@@ -359,6 +411,24 @@ pre {
 
 .view-stage {
   animation: fade-up 0.52s cubic-bezier(.2,.8,.2,1) both;
+}
+
+.ripple-dot {
+  position: absolute;
+  z-index: 0;
+  border-radius: 999px;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.5);
+  transform: translate(-50%, -50%) scale(0);
+  animation: ripple-wave 0.62s ease-out;
+}
+
+button > :not(.ripple-dot),
+.nav a > :not(.ripple-dot),
+.mobile-tabs a > :not(.ripple-dot),
+.card[role="button"] > :not(.ripple-dot) {
+  position: relative;
+  z-index: 1;
 }
 
 .grid {
@@ -394,6 +464,10 @@ pre {
     background 0.26s ease;
 }
 
+.view-stage .card {
+  animation: card-rise 0.5s cubic-bezier(.2,.8,.2,1) both;
+}
+
 .card:hover {
   border-color: rgba(37, 99, 235, 0.22);
   box-shadow: 0 24px 56px rgba(37, 99, 235, 0.16);
@@ -403,6 +477,7 @@ pre {
 .card[role="button"],
 button.card {
   text-align: left;
+  overflow: hidden;
 }
 
 .card h2,
@@ -430,10 +505,91 @@ button.card {
   overflow: hidden;
   border-color: rgba(255, 255, 255, 0.28);
   background:
-    linear-gradient(135deg, rgba(37, 99, 235, 0.96), rgba(6, 182, 212, 0.88) 48%, rgba(249, 115, 22, 0.84)),
+    linear-gradient(135deg, rgba(29, 78, 216, 0.98), rgba(8, 145, 178, 0.94) 48%, rgba(249, 115, 22, 0.76)),
     radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.3), transparent 22%);
   color: #fff;
   box-shadow: 0 26px 68px rgba(37, 99, 235, 0.22);
+}
+
+.hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.home-hero-grid {
+  align-items: stretch;
+}
+
+.status-grid {
+  margin-top: 16px;
+}
+
+.metric-card {
+  min-height: 104px;
+  overflow: hidden;
+}
+
+.metric-card::after {
+  position: absolute;
+  right: -24px;
+  bottom: -34px;
+  width: 112px;
+  height: 112px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.16), transparent 68%);
+  content: "";
+}
+
+.metric-card strong {
+  display: inline-block;
+  margin: 8px 5px 0 0;
+  color: var(--primary-strong);
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.feature-grid {
+  counter-reset: feature;
+}
+
+.feature-card {
+  min-height: 116px;
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  animation-delay: calc(var(--feature-index, 1) * 34ms);
+}
+
+.feature-mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.78), transparent 32%),
+    linear-gradient(135deg, rgba(37, 99, 235, 0.95), rgba(6, 182, 212, 0.86));
+  color: #fff;
+  font-size: 13px;
+  font-weight: 950;
+  box-shadow: 0 16px 30px rgba(37, 99, 235, 0.22);
+}
+
+.feature-card strong {
+  display: block;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.feature-card small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.55;
 }
 
 .hero::after {
@@ -446,10 +602,16 @@ button.card {
   background: rgba(255, 255, 255, 0.16);
   filter: blur(4px);
   content: "";
+  z-index: 0;
 }
 
 .hero .muted {
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.hero h2,
+.hero p {
+  text-shadow: 0 2px 18px rgba(15, 23, 42, 0.24);
 }
 
 .muted {
@@ -782,6 +944,24 @@ iframe {
   }
 }
 
+@keyframes card-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ripple-wave {
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(4.2);
+  }
+}
+
 @media (max-width: 1180px) {
   .shell {
     grid-template-columns: 248px minmax(0, 1fr);
@@ -835,6 +1015,15 @@ iframe {
     display: grid;
     grid-template-columns: 1fr 1fr;
     width: 100%;
+  }
+
+  .session-panel .tag.green {
+    justify-content: center;
+    grid-column: 1 / -1;
+  }
+
+  .session-panel button:last-child {
+    grid-column: 1 / -1;
   }
 
   .session-panel input,
@@ -895,6 +1084,7 @@ iframe {
   }
 
   .mobile-tabs a {
+    position: relative;
     display: grid;
     place-items: center;
     border-radius: 22px;
@@ -905,6 +1095,7 @@ iframe {
     text-align: center;
     text-decoration: none;
     transition: transform 0.22s cubic-bezier(.2,.9,.2,1.12), color 0.22s ease, background 0.22s ease;
+    overflow: hidden;
   }
 
   .mobile-tabs a:active {

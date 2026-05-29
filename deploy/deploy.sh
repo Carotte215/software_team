@@ -47,12 +47,10 @@ preflight_build() {
   echo "==> 本地构建前端"
   (cd "${ROOT}/web" && npm ci --silent && npm run build)
 
-  if [[ ! -d "${ROOT}/deploy/wheels" ]] || ! compgen -G "${ROOT}/deploy/wheels/*" >/dev/null; then
-    echo "==> 下载 Python wheels"
-    mkdir -p "${ROOT}/deploy/wheels"
-    pip download -r "${ROOT}/backend/requirements.txt" -d "${ROOT}/deploy/wheels" \
-      -i https://pypi.tuna.tsinghua.edu.cn/simple
-  fi
+  echo "==> 补齐 Python wheels"
+  mkdir -p "${ROOT}/deploy/wheels"
+  pip download -r "${ROOT}/backend/requirements.txt" -d "${ROOT}/deploy/wheels" \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple
 
   if [[ ! -d "${ROOT}/deploy/offline-debs" ]] || ! compgen -G "${ROOT}/deploy/offline-debs/*.deb" >/dev/null; then
     echo "缺少 deploy/offline-debs/*.deb，请先在本机下载离线系统包。" >&2

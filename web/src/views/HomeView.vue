@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref } from "vue";
+import { computed, inject, onMounted, ref, watch } from "vue";
 import { ROLE_LABEL, ROLES } from "../data/seed.js";
 import { go } from "../state/routes.js";
 import { formatTime } from "../utils.js";
@@ -28,14 +28,24 @@ const features = [
 ];
 
 onMounted(load);
+watch(() => session.value.token, load);
 
 async function load() {
-  const [noticeRes, inboxRes, student] = await Promise.all([
-    api.listNotices(),
+  const noticeRes = await api.listNotices().catch(() => ({ list: [] }));
+  notices.value = (noticeRes.list || []).slice(0, 4);
+
+  if (!session.value.token) {
+    unread.value = 0;
+    me.value = null;
+    todos.value = { pendingApps: 0, partyTasks: 0, academicRisk: "" };
+    workbenchSummary.value = null;
+    return;
+  }
+
+  const [inboxRes, student] = await Promise.all([
     api.getInbox(),
     api.getCurrentStudent(),
   ]);
-  notices.value = (noticeRes.list || []).slice(0, 4);
   unread.value = inboxRes.unread || 0;
   me.value = student;
 
@@ -56,7 +66,7 @@ async function load() {
 </script>
 
 <template>
-  <div class="grid cols-2">
+  <div class="grid cols-2 home-hero-grid">
     <section class="card hero">
       <h2>一站式学生事务入口</h2>
       <p class="muted">
@@ -70,34 +80,42 @@ async function load() {
     </section>
   </div>
 
-  <div v-if="isStudent && (todos.pendingApps || todos.partyTasks || todos.academicRisk)" class="grid cols-3">
-    <div v-if="todos.pendingApps" class="card" @click="go('apply')" role="button">
+  <div v-if="isStudent && (todos.pendingApps || todos.partyTasks || todos.academicRisk)" class="grid cols-3 status-grid">
+    <div v-if="todos.pendingApps" class="card metric-card" @click="go('apply')" role="button">
       <div class="muted">办事申请</div>
       <strong>{{ todos.pendingApps }}</strong> 条审批中
     </div>
-    <div v-if="todos.partyTasks" class="card" @click="go('party')" role="button">
+    <div v-if="todos.partyTasks" class="card metric-card" @click="go('party')" role="button">
       <div class="muted">党团待办</div>
       <strong>{{ todos.partyTasks }}</strong> 项未完成
     </div>
-    <div v-if="todos.academicRisk" class="card" @click="go('academic')" role="button">
+    <div v-if="todos.academicRisk" class="card metric-card" @click="go('academic')" role="button">
       <div class="muted">学业风险</div>
       <strong>{{ todos.academicRisk }}</strong>
     </div>
   </div>
 
-  <div v-if="workbenchSummary" class="grid cols-4">
-    <div class="card"><div class="muted">在管学生</div><strong>{{ workbenchSummary.students }}</strong></div>
-    <div class="card"><div class="muted">待审批</div><strong>{{ workbenchSummary.pendingApps }}</strong></div>
-    <div class="card"><div class="muted">未命中词</div><strong>{{ workbenchSummary.miss }}</strong></div>
-    <div class="card"><div class="muted">通知批次</div><strong>{{ workbenchSummary.batches }}</strong></div>
+  <div v-if="workbenchSummary" class="grid cols-4 status-grid">
+    <div class="card metric-card"><div class="muted">在管学生</div><strong>{{ workbenchSummary.students }}</strong></div>
+    <div class="card metric-card"><div class="muted">待审批</div><strong>{{ workbenchSummary.pendingApps }}</strong></div>
+    <div class="card metric-card"><div class="muted">未命中词</div><strong>{{ workbenchSummary.miss }}</strong></div>
+    <div class="card metric-card"><div class="muted">通知批次</div><strong>{{ workbenchSummary.batches }}</strong></div>
   </div>
 
   <div class="section-title">核心功能</div>
-  <div class="grid cols-3">
-    <button v-for="[id, title, desc] in features" :key="id" class="card" @click="go(id)">
-      <strong>{{ title }}</strong>
-      <br />
-      <span class="muted">{{ desc }}</span>
+  <div class="grid cols-3 feature-grid">
+    <button
+      v-for="([id, title, desc], index) in features"
+      :key="id"
+      class="card feature-card"
+      :style="{ '--feature-index': index + 1 }"
+      @click="go(id)"
+    >
+      <span class="feature-mark">{{ String(index + 1).padStart(2, "0") }}</span>
+      <span>
+        <strong>{{ title }}</strong>
+        <small>{{ desc }}</small>
+      </span>
     </button>
   </div>
 

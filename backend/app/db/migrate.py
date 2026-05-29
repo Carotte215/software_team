@@ -11,6 +11,13 @@ from app.services.seed_data import STUDENTS
 
 
 def ensure_schema(engine: Engine) -> None:
+    from app.db.session import Base
+
+    # PostgreSQL remains the target database. create_all is intentionally kept
+    # here as a no-op for existing tables and a safety net for newly added ones;
+    # the ALTER patches below handle old tables that predate current models.
+    Base.metadata.create_all(bind=engine)
+
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
     with engine.begin() as conn:
@@ -70,8 +77,7 @@ def ensure_schema(engine: Engine) -> None:
         ):
             conn.execute(text(ddl))
 
-        # 上面可能新建了表，必须重新 inspect，否则漏掉 ADD COLUMN
-        inspector = inspect(engine)
+        inspector = inspect(conn)
         tables = set(inspector.get_table_names())
 
         if "party_progress" in tables:

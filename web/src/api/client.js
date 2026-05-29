@@ -49,8 +49,9 @@ function authHeaders(session, includeJson = true) {
   };
 }
 
-function handleUnauthorized() {
+function handleUnauthorized(session) {
   if (config.mode !== "remote") return;
+  if (!session?.token) return;
   window.dispatchEvent(new CustomEvent("authrequired"));
 }
 
@@ -75,7 +76,7 @@ export async function request({ path, method = "GET", data = {}, session }) {
     body: verb === "GET" ? undefined : upload ? data : JSON.stringify(data),
   });
   if (res.status === 401) {
-    handleUnauthorized();
+    handleUnauthorized(session);
     throw new Error("HTTP 401");
   }
   if (res.status === 429) {
@@ -95,7 +96,7 @@ export async function requestBlob({ path, data = {}, session }) {
     headers: authHeaders(session, false),
   });
   if (res.status === 401) {
-    handleUnauthorized();
+    handleUnauthorized(session);
     throw new Error("HTTP 401");
   }
   if (!res.ok) throw new Error(await readErrorMessage(res, `HTTP ${res.status}`));
