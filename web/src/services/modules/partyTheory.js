@@ -1,13 +1,19 @@
-export function createPartyTheoryApi(call, { requestBlob, apiPath } = {}) {
+export function createPartyTheoryApi(call, { requestBlob, apiPath, sessionRef } = {}) {
   const blobCall = requestBlob || call;
   return {
     getPartyProgress: () => call({ path: "/party/progress" }),
     getLeagueProgress: () => call({ path: "/league/progress" }),
     getPartyOfficialDocs: () => call({ path: "/party/official-docs" }),
     getPartyOfficialGuide: () => call({ path: "/party/official-guide" }),
-    downloadPartyOfficialDoc: (docId) => blobCall({ path: `/party/official-docs/${docId}/download` }),
+    downloadPartyOfficialDoc: (docId) => blobCall({
+      path: `/party/official-docs/${docId}/download`,
+      session: sessionRef?.value,
+    }),
     previewPartyOfficialDoc: async (docId) => {
-      const blob = await blobCall({ path: `/party/official-docs/${docId}/preview` });
+      const blob = await blobCall({
+        path: `/party/official-docs/${docId}/preview`,
+        session: sessionRef?.value,
+      });
       return URL.createObjectURL(blob);
     },
     listPartyProgress: (query = {}) => call({ path: "/workbench/party/progress", data: query }),
@@ -35,7 +41,7 @@ export function createPartyTheoryApi(call, { requestBlob, apiPath } = {}) {
     getStudentPartyPendingSteps: (studentId) => call({ path: `/workbench/party/students/${studentId}` }),
     getStudentLeaguePendingSteps: (studentId) => call({ path: `/workbench/league/students/${studentId}` }),
     verifyLeagueStep: (payload) => call({ path: "/workbench/league/steps/verify", method: "POST", data: payload }),
-    exportPartyProgress: () => blobCall({ path: "/workbench/party/export" }),
+    exportPartyProgress: () => blobCall({ path: "/workbench/party/export", session: sessionRef?.value }),
     refreshLeagueReminders: () => call({ path: "/workbench/league/reminders/refresh", method: "POST" }),
     getPartyTimeline: () => call({ path: "/workbench/party/timeline" }),
     updatePartyTimeline: (rules) => call({ path: "/workbench/party/timeline", method: "PUT", data: { rules } }),
