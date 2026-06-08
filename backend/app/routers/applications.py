@@ -62,7 +62,6 @@ def get_draft(db: Session = Depends(get_db), session: CurrentSession = Depends(g
 
 @router.post("/applications/draft")
 def save_draft(payload: ApplicationCreate, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
-    validate_application_payload(payload.type, payload.subtype, payload.form)
     student = db.get(Student, session.student_id)
     sanitized_form = sanitize_application_form(payload.form, student)
     row = db.scalars(

@@ -7,6 +7,9 @@ const api = inject("api");
 const toast = inject("toast");
 const applications = ref([]);
 const selected = ref(null);
+const isSavingDraft = ref(false);
+const isSubmitting = ref(false);
+const isPreviewing = ref(false);
 const form = reactive({
   id: "",
   status: "",
@@ -176,10 +179,18 @@ function onTypeChange() {
 }
 
 async function saveDraft() {
-  const draft = await api.saveApplicationDraft(await buildPayload());
-  fillForm(draft);
-  toast("草稿已保存");
-  await load();
+  if (isSavingDraft.value) return;
+  isSavingDraft.value = true;
+  try {
+    const draft = await api.saveApplicationDraft(await buildPayload());
+    fillForm(draft);
+    toast("草稿已保存");
+    await load();
+  } catch (error) {
+    toast(error.message || "草稿保存失败，请检查附件类型或稍后重试");
+  } finally {
+    isSavingDraft.value = false;
+  }
 }
 
 const previewHtml = ref("");
@@ -194,28 +205,44 @@ async function previewDocument() {
     toast("盖章申请无需文档预览，请直接提交");
     return;
   }
-  const payload = await buildPayload();
-  const res = await api.previewApplication(payload);
-  previewHtml.value = res.html || "";
-  toast("已生成预览");
+  if (isPreviewing.value) return;
+  isPreviewing.value = true;
+  try {
+    const payload = await buildPayload();
+    const res = await api.previewApplication(payload);
+    previewHtml.value = res.html || "";
+    toast("已生成预览");
+  } catch (error) {
+    toast(error.message || "预览生成失败，请检查申请内容或附件");
+  } finally {
+    isPreviewing.value = false;
+  }
 }
 
 async function submit() {
+  if (isSubmitting.value) return;
   const err = validateForm();
   if (err) {
     toast(err);
     return;
   }
-  const payload = await buildPayload();
-  if (form.id && [APPROVAL.DRAFT, APPROVAL.REJECTED].includes(form.status)) {
-    await api.submitApplicationById(form.id, payload);
-    toast(form.status === APPROVAL.REJECTED ? "已重新提交审批" : "草稿已提交审批");
-  } else {
-    await api.submitApplication(payload);
-    toast("已提交审批");
+  isSubmitting.value = true;
+  try {
+    const payload = await buildPayload();
+    if (form.id && [APPROVAL.DRAFT, APPROVAL.REJECTED].includes(form.status)) {
+      await api.submitApplicationById(form.id, payload);
+      toast(form.status === APPROVAL.REJECTED ? "已重新提交审批" : "草稿已提交审批");
+    } else {
+      await api.submitApplication(payload);
+      toast("已提交审批");
+    }
+    resetForm();
+    await load();
+  } catch (error) {
+    toast(error.message || "提交审批失败，请检查必填项或附件类型");
+  } finally {
+    isSubmitting.value = false;
   }
-  resetForm();
-  await load();
 }
 
 async function openDetail(item) {
@@ -326,9 +353,15 @@ async function downloadDocument(item, format = "pdf") {
           <span class="muted" v-else-if="form.files.length">已选择/保留 {{ form.files.length }} 个附件</span>
         </label>
         <div class="span-2 row">
-          <button type="button" @click="saveDraft">保存草稿</button>
-          <button type="button" @click="previewDocument">预览证明</button>
-          <button class="primary">提交审批</button>
+          <button type="button" :disabled="isSavingDraft || isSubmitting" @click="saveDraft">
+            {{ isSavingDraft ? "保存中..." : "保存草稿" }}
+          </button>
+          <button type="button" :disabled="isPreviewing || isSubmitting" @click="previewDocument">
+            {{ isPreviewing ? "生成中..." : "预览证明" }}
+          </button>
+          <button class="primary" :disabled="isSubmitting || isSavingDraft">
+            {{ isSubmitting ? "提交中..." : "提交审批" }}
+          </button>
           <button type="button" @click="resetForm">新建</button>
         </div>
       </form>
