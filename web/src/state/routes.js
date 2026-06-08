@@ -13,7 +13,6 @@ export const routes = [
   { id: "academic", label: "学业分析", roles: [ROLES.STUDENT, ROLES.TEACHER, ROLES.LEADER] },
   { id: "profile", label: "学生画像", roles: allRoles },
   { id: "workbench", label: "管理工作台", roles: managementRoles },
-  { id: "help", label: "需求追溯", roles: allRoles },
 ];
 
 export const mobileRouteIds = ["home", "knowledge", "party", "apply", "profile"];

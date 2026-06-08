@@ -1,5 +1,5 @@
 <script setup>
-import { inject, onMounted, reactive, ref } from "vue";
+import { computed, inject, onMounted, reactive, ref } from "vue";
 import WorkbenchBatchTable from "../components/WorkbenchBatchTable.vue";
 import { APPROVAL, FLOW_STAGES, ROLES } from "../data/seed.js";
 import { formatTime } from "../utils.js";
@@ -126,6 +126,29 @@ const theoryForm = reactive({
   category: "理论知识",
   online: true,
 });
+
+const WORKBENCH_PANELS = [
+  { id: "overview", label: "总览看板", desc: "关键指标与领导看板", roles: [ROLES.TEACHER, ROLES.COORDINATOR, ROLES.LEADER] },
+  { id: "approvals", label: "审批通知", desc: "申请审批、通知发布、批次追踪", roles: [ROLES.TEACHER, ROLES.COORDINATOR, ROLES.LEADER] },
+  { id: "party", label: "党团管理", desc: "党团推进、校历、题库与进度台账", roles: [ROLES.TEACHER, ROLES.LEADER] },
+  { id: "students", label: "学生画像", desc: "学生档案、导入导出与字段维护", roles: [ROLES.TEACHER, ROLES.COORDINATOR] },
+  { id: "academic", label: "学业培养", desc: "学业风险与培养方案维护", roles: [ROLES.TEACHER, ROLES.LEADER] },
+  { id: "honors", label: "荣誉展示", desc: "荣誉条目、证明材料与展示状态", roles: [ROLES.TEACHER, ROLES.COORDINATOR, ROLES.LEADER] },
+  { id: "knowledge", label: "知识模板", desc: "知识库、未命中词与模板维护", roles: [ROLES.TEACHER, ROLES.COORDINATOR, ROLES.LEADER] },
+  { id: "audit", label: "审计日志", desc: "操作记录与导出", roles: [ROLES.TEACHER, ROLES.COORDINATOR, ROLES.LEADER] },
+];
+const workbenchPanel = ref("overview");
+const visibleWorkbenchPanels = computed(() => WORKBENCH_PANELS.filter((item) => item.roles.includes(session.value.role)));
+const activeWorkbenchPanel = computed(() => {
+  if (visibleWorkbenchPanels.value.some((item) => item.id === workbenchPanel.value)) {
+    return workbenchPanel.value;
+  }
+  return visibleWorkbenchPanels.value[0]?.id || "overview";
+});
+
+function showWorkbenchPanel(id) {
+  return activeWorkbenchPanel.value === id;
+}
 
 onMounted(load);
 
@@ -1068,30 +1091,55 @@ async function saveHonor() {
   </div>
 
   <template v-else>
-    <div class="grid cols-3">
-      <div class="card"><div class="muted">在册学生</div><div style="font-size:28px;font-weight:700">{{ summary?.students }}</div></div>
-      <div class="card"><div class="muted">待审批</div><div style="font-size:28px;font-weight:700">{{ summary?.pendingApps }}</div></div>
-      <div class="card"><div class="muted">通知批次</div><div style="font-size:28px;font-weight:700">{{ summary?.batches }}</div></div>
-      <div class="card"><div class="muted">未命中词</div><div style="font-size:28px;font-weight:700">{{ misses.length || summary?.miss || 0 }}</div></div>
-      <div class="card"><div class="muted">短信记录</div><div style="font-size:28px;font-weight:700">{{ sms.length || summary?.sms || 0 }}</div></div>
+    <section class="card stack">
+      <div class="row between wrap">
+        <div>
+          <h3>管理工作台板块</h3>
+          <p class="muted">按功能域拆分管理入口，减少单页混杂操作。</p>
+        </div>
+        <span class="tag gray">{{ visibleWorkbenchPanels.length }} 个板块</span>
+      </div>
+      <div class="row wrap">
+        <button
+          v-for="panel in visibleWorkbenchPanels"
+          :key="panel.id"
+          type="button"
+          :class="{ primary: activeWorkbenchPanel === panel.id }"
+          :title="panel.desc"
+          @click="workbenchPanel = panel.id"
+        >
+          {{ panel.label }}
+        </button>
+      </div>
+      <p class="muted">{{ visibleWorkbenchPanels.find((item) => item.id === activeWorkbenchPanel)?.desc }}</p>
+    </section>
+
+    <div v-if="showWorkbenchPanel('overview')" class="stack">
+      <div class="grid cols-3">
+        <div class="card"><div class="muted">在册学生</div><div style="font-size:28px;font-weight:700">{{ summary?.students }}</div></div>
+        <div class="card"><div class="muted">待审批</div><div style="font-size:28px;font-weight:700">{{ summary?.pendingApps }}</div></div>
+        <div class="card"><div class="muted">通知批次</div><div style="font-size:28px;font-weight:700">{{ summary?.batches }}</div></div>
+        <div class="card"><div class="muted">未命中词</div><div style="font-size:28px;font-weight:700">{{ misses.length || summary?.miss || 0 }}</div></div>
+        <div class="card"><div class="muted">短信记录</div><div style="font-size:28px;font-weight:700">{{ sms.length || summary?.sms || 0 }}</div></div>
+      </div>
+
+      <div v-if="leader" class="section-title">领导看板</div>
+      <div v-if="leader" class="card stack">
+        <p>政策条目 {{ leader.knowledgeCount }} · 通知 {{ leader.noticeCount }} · 学业高风险 {{ leader.academicHighRiskStudents }} · 待审批 {{ leader.pendingApps }}</p>
+        <div v-if="leader.partyProgress" class="row wrap">
+          <span class="tag">入党跟踪 {{ leader.partyProgress.total }} 人</span>
+          <span class="tag gray">待确认环节 {{ leader.partyProgress.pendingVerifySteps }}</span>
+          <span v-for="item in leader.partyProgress.byStage || []" :key="item.key" class="tag">{{ item.name }} {{ item.count }}</span>
+        </div>
+        <div v-if="leader.leagueProgress" class="row wrap">
+          <span class="tag">入团跟踪 {{ leader.leagueProgress.total }} 人</span>
+          <span class="tag gray">待确认环节 {{ leader.leagueProgress.pendingVerifySteps }}</span>
+          <span v-for="item in leader.leagueProgress.byStage || []" :key="item.key" class="tag">{{ item.name }} {{ item.count }}</span>
+        </div>
+      </div>
     </div>
 
-    <div v-if="leader" class="section-title">领导看板</div>
-    <div v-if="leader" class="card stack">
-      <p>政策条目 {{ leader.knowledgeCount }} · 通知 {{ leader.noticeCount }} · 学业高风险 {{ leader.academicHighRiskStudents }} · 待审批 {{ leader.pendingApps }}</p>
-      <div v-if="leader.partyProgress" class="row wrap">
-        <span class="tag">入党跟踪 {{ leader.partyProgress.total }} 人</span>
-        <span class="tag gray">待确认环节 {{ leader.partyProgress.pendingVerifySteps }}</span>
-        <span v-for="item in leader.partyProgress.byStage || []" :key="item.key" class="tag">{{ item.name }} {{ item.count }}</span>
-      </div>
-      <div v-if="leader.leagueProgress" class="row wrap">
-        <span class="tag">入团跟踪 {{ leader.leagueProgress.total }} 人</span>
-        <span class="tag gray">待确认环节 {{ leader.leagueProgress.pendingVerifySteps }}</span>
-        <span v-for="item in leader.leagueProgress.byStage || []" :key="item.key" class="tag">{{ item.name }} {{ item.count }}</span>
-      </div>
-    </div>
-
-    <div class="grid cols-2">
+    <div v-if="showWorkbenchPanel('approvals')" class="grid cols-2">
       <section>
         <div class="row between">
           <div class="section-title">审批处理</div>
@@ -1178,7 +1226,7 @@ async function saveHonor() {
       </section>
     </div>
 
-    <section class="card" v-if="session.role === ROLES.TEACHER">
+    <section class="card" v-if="showWorkbenchPanel('party') && session.role === ROLES.TEACHER">
       <div class="row between">
         <h3>党团校历维护（FR3 / 校历联动）</h3>
         <div class="row wrap">
@@ -1205,7 +1253,7 @@ async function saveHonor() {
       <p class="muted">保存后学生党团页「校历要点」将同步更新；点击「刷新提醒」可为近 21 天节点生成待办。</p>
     </section>
 
-    <section class="card" v-if="session.role === ROLES.TEACHER">
+    <section class="card" v-if="showWorkbenchPanel('party') && session.role === ROLES.TEACHER">
       <h3>党团阶段推进</h3>
       <form class="form-grid" @submit.prevent="advanceParty">
         <label>
@@ -1260,7 +1308,7 @@ async function saveHonor() {
       </div>
     </section>
 
-    <section class="card" v-if="session.role === ROLES.TEACHER">
+    <section class="card" v-if="showWorkbenchPanel('party') && session.role === ROLES.TEACHER">
       <h3>入团阶段推进</h3>
       <form class="form-grid" @submit.prevent="advanceLeague">
         <label>
@@ -1310,7 +1358,7 @@ async function saveHonor() {
       </div>
     </section>
 
-    <section class="card" v-if="partyTimeline && [ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
+    <section class="card" v-if="showWorkbenchPanel('party') && partyTimeline && [ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
       <div class="row between">
         <h3>党团标准时间线</h3>
         <div class="row wrap" v-if="session.role === ROLES.TEACHER">
@@ -1336,7 +1384,7 @@ async function saveHonor() {
       <p class="muted">保存规则后点击刷新提醒，系统会按当前阶段为学生生成或更新待办任务。</p>
     </section>
 
-    <section class="card" v-if="partyTimeline && session.role === ROLES.TEACHER">
+    <section class="card" v-if="showWorkbenchPanel('party') && partyTimeline && session.role === ROLES.TEACHER">
       <div class="row between">
         <h3>党团阶段配置</h3>
         <button class="primary" @click="savePartyStages">保存阶段</button>
@@ -1358,7 +1406,7 @@ async function saveHonor() {
       </div>
     </section>
 
-    <section class="card" v-if="partyProgressList.length && [ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
+    <section class="card" v-if="showWorkbenchPanel('party') && partyProgressList.length && [ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
       <div class="row between wrap">
         <h3>党团进度一览</h3>
         <div class="row wrap">
@@ -1390,7 +1438,7 @@ async function saveHonor() {
       </div>
     </section>
 
-    <section class="card" v-if="leagueProgressList.length && [ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
+    <section class="card" v-if="showWorkbenchPanel('party') && leagueProgressList.length && [ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
       <h3>入团进度一览</h3>
       <div class="table-wrap">
         <table class="table">
@@ -1409,7 +1457,7 @@ async function saveHonor() {
       </div>
     </section>
 
-    <section class="card" v-if="[ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
+    <section class="card" v-if="showWorkbenchPanel('party') && [ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
       <div class="row between">
         <h3>理论自测题库</h3>
         <span class="tag gray">{{ theoryQuestions.length }} 题</span>
@@ -1455,7 +1503,7 @@ async function saveHonor() {
       </div>
     </section>
 
-    <section class="card" v-if="session.role === ROLES.TEACHER">
+    <section class="card" v-if="showWorkbenchPanel('students') && session.role === ROLES.TEACHER">
       <div class="row between">
         <h3>学生画像导出</h3>
         <button class="primary" @click="exportStudents('csv')">导出 CSV</button>
@@ -1496,7 +1544,7 @@ async function saveHonor() {
       </div>
     </section>
 
-    <section class="card" v-if="[ROLES.TEACHER, ROLES.COORDINATOR].includes(session.role)">
+    <section class="card" v-if="showWorkbenchPanel('students') && [ROLES.TEACHER, ROLES.COORDINATOR].includes(session.role)">
       <div class="row between">
         <h3>学生画像维护</h3>
         <span class="tag gray">可编辑 {{ fieldPolicy?.editable?.length || 0 }} 项</span>
@@ -1538,7 +1586,7 @@ async function saveHonor() {
       </div>
     </section>
 
-    <section v-if="[ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
+    <section v-if="showWorkbenchPanel('academic') && [ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
       <div class="section-title">学业风险学生</div>
       <div class="stack">
         <article v-for="item in academicRisks.slice(0, 6)" :key="item.studentId" class="card">
@@ -1558,7 +1606,7 @@ async function saveHonor() {
       </div>
     </section>
 
-    <section class="card" v-if="[ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
+    <section class="card" v-if="showWorkbenchPanel('academic') && [ROLES.TEACHER, ROLES.LEADER].includes(session.role)">
       <div class="row between">
         <h3>培养方案维护</h3>
         <span class="tag gray">{{ academicPlans.length }} 个方案</span>
@@ -1611,7 +1659,7 @@ async function saveHonor() {
       </div>
     </section>
 
-    <div class="grid cols-2">
+    <div v-if="showWorkbenchPanel('honors')" class="grid cols-2">
       <section class="card" v-if="session.role === ROLES.TEACHER">
         <h3>荣誉展示维护</h3>
         <form class="form-grid" @submit.prevent="saveHonor">
@@ -1671,7 +1719,7 @@ async function saveHonor() {
       </section>
     </div>
 
-    <section v-if="selectedApplication" class="card">
+    <section v-if="showWorkbenchPanel('approvals') && selectedApplication" class="card">
       <div class="row between">
         <h3>审批详情</h3>
         <span class="tag">{{ selectedApplication.status }}</span>
@@ -1688,6 +1736,7 @@ async function saveHonor() {
     </section>
 
     <WorkbenchBatchTable
+      v-if="showWorkbenchPanel('approvals')"
       :batches="batches"
       :batch-filter="batchFilter"
       :can-dispatch="session.role === ROLES.TEACHER"
@@ -1695,8 +1744,8 @@ async function saveHonor() {
       @dispatch-scheduled="dispatchScheduled"
     />
 
-    <div class="section-title">高频未命中词</div>
-    <div class="stack">
+    <div v-if="showWorkbenchPanel('knowledge')" class="section-title">高频未命中词</div>
+    <div v-if="showWorkbenchPanel('knowledge')" class="stack">
       <div v-for="item in misses.slice(0, 20)" :key="item.keyword" class="card row between">
         <strong>{{ item.keyword }}</strong>
         <span class="tag">{{ item.count }} 次</span>
@@ -1706,7 +1755,7 @@ async function saveHonor() {
       <div v-if="!misses.length" class="empty card">暂无未命中词记录</div>
     </div>
 
-    <div class="grid cols-2">
+    <div v-if="showWorkbenchPanel('knowledge')" class="grid cols-2">
       <section class="card">
         <h3>知识库维护</h3>
         <div class="row wrap" v-if="session.role === ROLES.TEACHER" style="margin-bottom:12px">
@@ -1763,7 +1812,7 @@ async function saveHonor() {
       </section>
     </div>
 
-    <div class="grid cols-2" v-if="[ROLES.TEACHER, ROLES.COORDINATOR].includes(session.role)">
+    <div class="grid cols-2" v-if="showWorkbenchPanel('knowledge') && [ROLES.TEACHER, ROLES.COORDINATOR].includes(session.role)">
       <section class="card">
         <h3>常用模板维护</h3>
         <form class="stack" @submit.prevent="saveWorkbenchTemplate">
@@ -1804,11 +1853,11 @@ async function saveHonor() {
       </section>
     </div>
 
-    <div class="row between">
+    <div v-if="showWorkbenchPanel('audit')" class="row between">
       <div class="section-title">审计日志</div>
       <button v-if="session.role === ROLES.TEACHER" type="button" @click="exportAuditLogsCsv">导出 CSV</button>
     </div>
-    <div class="stack">
+    <div v-if="showWorkbenchPanel('audit')" class="stack">
       <div v-for="item in logs" :key="item.id" class="card muted">
         {{ formatTime(item.at) }} · {{ item.role }} · {{ item.actorId }} · {{ item.action }} → {{ item.target }}
       </div>
