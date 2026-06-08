@@ -581,6 +581,20 @@ async function exportPartyProgress() {
   }
 }
 
+async function downloadStepMaterial(file) {
+  if (!file?.id && !file?.fileId && !file?.url) {
+    toast("该环节附件缺少文件标识，无法下载");
+    return;
+  }
+  try {
+    const blob = await api.downloadFile(file);
+    saveBlob(blob, file.name || "党团环节附件");
+    toast("附件下载已开始");
+  } catch (error) {
+    toast(error.message || "附件下载失败");
+  }
+}
+
 async function verifyPartyStep(studentId, stepId) {
   const result = await withActionError(
     () => api.verifyPartyStep({ studentId, stepId }),
@@ -1222,9 +1236,20 @@ async function saveHonor() {
       </form>
       <div v-if="partyPendingSteps.length" class="stack" style="margin-top:16px">
         <h4>待确认环节</h4>
-        <div v-for="step in partyPendingSteps" :key="step.id" class="card row between">
-          <span>{{ step.order }}. {{ step.name }}</span>
-          <button class="primary" @click="verifyPartyStep(partyForm.studentId, step.id)">确认</button>
+        <div v-for="step in partyPendingSteps" :key="step.id" class="card stack">
+          <div class="row between wrap">
+            <strong>{{ step.order }}. {{ step.name }}</strong>
+            <button class="primary" @click="verifyPartyStep(partyForm.studentId, step.id)">确认</button>
+          </div>
+          <p v-if="step.materialCatalog?.length" class="muted">需准备：{{ step.materialCatalog.join("、") }}</p>
+          <div v-if="step.materials?.length" class="stack compact">
+            <div class="muted">已上传附件（{{ step.materials.length }}）</div>
+            <div v-for="file in step.materials" :key="file.id || file.fileId || file.name" class="row between wrap">
+              <span>{{ file.name || "未命名附件" }} <span class="muted" v-if="file.size">({{ file.size }} bytes)</span></span>
+              <button type="button" @click="downloadStepMaterial(file)">下载附件</button>
+            </div>
+          </div>
+          <p v-else class="muted">该环节暂无已上传附件，请谨慎确认。</p>
         </div>
       </div>
       <div v-if="partyStudentDetail?.thoughtReports?.length" class="stack" style="margin-top:16px">
@@ -1267,9 +1292,20 @@ async function saveHonor() {
       </form>
       <div v-if="leaguePendingSteps.length" class="stack" style="margin-top:16px">
         <h4>待确认入团环节</h4>
-        <div v-for="step in leaguePendingSteps" :key="step.id" class="card row between">
-          <span>{{ step.order }}. {{ step.name }}</span>
-          <button class="primary" @click="verifyLeagueStep(leagueForm.studentId, step.id)">确认</button>
+        <div v-for="step in leaguePendingSteps" :key="step.id" class="card stack">
+          <div class="row between wrap">
+            <strong>{{ step.order }}. {{ step.name }}</strong>
+            <button class="primary" @click="verifyLeagueStep(leagueForm.studentId, step.id)">确认</button>
+          </div>
+          <p v-if="step.materialCatalog?.length" class="muted">需准备：{{ step.materialCatalog.join("、") }}</p>
+          <div v-if="step.materials?.length" class="stack compact">
+            <div class="muted">已上传附件（{{ step.materials.length }}）</div>
+            <div v-for="file in step.materials" :key="file.id || file.fileId || file.name" class="row between wrap">
+              <span>{{ file.name || "未命名附件" }} <span class="muted" v-if="file.size">({{ file.size }} bytes)</span></span>
+              <button type="button" @click="downloadStepMaterial(file)">下载附件</button>
+            </div>
+          </div>
+          <p v-else class="muted">该环节暂无已上传附件，请谨慎确认。</p>
         </div>
       </div>
     </section>
