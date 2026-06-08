@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, reactive, ref } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import EmptyStateCard from "../components/EmptyStateCard.vue";
 import { go } from "../state/routes.js";
 import { formatTime } from "../utils.js";
@@ -17,6 +17,8 @@ const theoryAnswers = ref({});
 const theoryResult = ref(null);
 const loadError = ref("");
 const previewUrl = ref("");
+const previewDoc = ref(null);
+const previewPanel = ref(null);
 const showFullSteps = ref(false);
 const thoughtForm = reactive({ content: "", attachments: [] });
 const thoughtReports = ref([]);
@@ -72,6 +74,10 @@ function groupStatusClass(group) {
 }
 
 onMounted(load);
+
+onBeforeUnmount(() => {
+  closePreview();
+});
 
 async function load() {
   try {
@@ -163,9 +169,19 @@ async function previewOfficial(doc) {
   try {
     if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
     previewUrl.value = await api.previewPartyOfficialDoc(doc.id);
+    previewDoc.value = doc;
+    toast("已打开预览");
+    await nextTick();
+    previewPanel.value?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     toast("预览失败，请尝试下载");
   }
+}
+
+function closePreview() {
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
+  previewUrl.value = "";
+  previewDoc.value = null;
 }
 
 function isNativeFile(item) {
@@ -276,6 +292,20 @@ async function submitThoughtReport() {
       </div>
     </section>
 
+    <section v-if="previewUrl" ref="previewPanel" class="card official-preview">
+      <div class="row between wrap">
+        <div>
+          <h3>{{ previewDoc?.title || "官方文件预览" }}</h3>
+          <p class="muted">预览来自平台内置官方文件；如图片显示不完整，可下载后查看原件。</p>
+        </div>
+        <div class="row wrap">
+          <button v-if="previewDoc" class="primary" @click="downloadOfficial(previewDoc)">下载原件</button>
+          <button type="button" @click="closePreview">关闭预览</button>
+        </div>
+      </div>
+      <img :src="previewUrl" alt="官方文件预览" class="preview-image" />
+    </section>
+
     <div class="card">
       <h3>{{ activeFlow.flowName }}</h3>
       <p class="muted">{{ activeFlow.reference }}</p>
@@ -355,7 +385,6 @@ async function submitThoughtReport() {
           </div>
           <EmptyStateCard v-if="!officialDocs.length" text="暂无官方文件" />
         </div>
-        <img v-if="previewUrl" :src="previewUrl" alt="官方文件预览" class="preview-image" />
       </section>
 
       <section>
@@ -543,6 +572,10 @@ async function submitThoughtReport() {
 }
 .official-banner {
   border-left: 4px solid #c41e3a;
+}
+.official-preview {
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  background: rgba(239, 246, 255, 0.72);
 }
 .official-rule {
   color: #92400e;
