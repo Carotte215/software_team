@@ -34,9 +34,12 @@ router = APIRouter(tags=["notices"])
 
 @router.get("/notices")
 
-def list_notices(db: Session = Depends(get_db)) -> dict:
+def list_notices(tag: str = "", db: Session = Depends(get_db)) -> dict:
 
     rows = db.scalars(select(Notice).where(Notice.published_at <= datetime.now(timezone.utc)).order_by(Notice.published_at.desc())).all()
+
+    if tag:
+        rows = [row for row in rows if tag in (row.tags or [])]
 
     return {"list": [notice(row) for row in rows]}
 

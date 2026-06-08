@@ -696,6 +696,21 @@ button.card {
   white-space: nowrap;
 }
 
+button.tag {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.tag-button {
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.tag-button:hover {
+  border-color: rgba(37, 99, 235, 0.38);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.12);
+  transform: translateY(-1px);
+}
+
 .tag.gray {
   border-color: rgba(100, 116, 139, 0.16);
   background: rgba(241, 245, 249, 0.82);

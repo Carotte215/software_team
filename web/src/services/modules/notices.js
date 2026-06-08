@@ -1,6 +1,6 @@
 export function createNoticesApi(call) {
   return {
-    listNotices: () => call({ path: "/notices" }),
+    listNotices: (query = {}) => call({ path: "/notices", data: query }),
     getInbox: () => call({ path: "/messages/inbox" }),
     markMessageRead: (id) => call({ path: `/messages/${id}/read`, method: "POST" }),
     publishNotice: (payload) => call({ path: "/workbench/notices/publish", method: "POST", data: payload }),

@@ -1,5 +1,5 @@
 <script setup>
-import { inject, onMounted, ref } from "vue";
+import { computed, inject, onMounted, ref } from "vue";
 import EmptyStateCard from "../components/EmptyStateCard.vue";
 import { formatTime } from "../utils.js";
 
@@ -9,6 +9,17 @@ const notices = ref([]);
 const messages = ref([]);
 const expandedNotice = ref(null);
 const loadError = ref("");
+const selectedTag = ref("");
+
+const availableTags = computed(() => {
+  const tags = notices.value.flatMap((item) => item.tags || []);
+  return Array.from(new Set(tags)).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+});
+
+const filteredNotices = computed(() => {
+  if (!selectedTag.value) return notices.value;
+  return notices.value.filter((item) => (item.tags || []).includes(selectedTag.value));
+});
 
 onMounted(load);
 
@@ -41,6 +52,11 @@ async function markRead(id) {
 function toggleNotice(item) {
   expandedNotice.value = expandedNotice.value?.id === item.id ? null : item;
 }
+
+function selectTag(tag) {
+  selectedTag.value = selectedTag.value === tag ? "" : tag;
+  expandedNotice.value = null;
+}
 </script>
 
 <template>
@@ -48,21 +64,44 @@ function toggleNotice(item) {
   <div class="grid cols-2">
     <section>
       <div class="section-title">通知公告</div>
+      <div v-if="availableTags.length" class="toolbar row wrap notice-filter">
+        <span class="muted">按标签筛选：</span>
+        <button class="tag" :class="{ green: !selectedTag }" type="button" @click="selectTag('')">全部</button>
+        <button
+          v-for="tag in availableTags"
+          :key="tag"
+          class="tag tag-button"
+          :class="{ green: selectedTag === tag }"
+          type="button"
+          @click="selectTag(tag)"
+        >
+          {{ tag }}
+        </button>
+      </div>
       <div class="stack">
-        <article v-for="item in notices" :key="item.id" class="card notice">
+        <article v-for="item in filteredNotices" :key="item.id" class="card notice">
           <div class="row between">
             <strong>{{ item.title }}</strong>
             <span class="muted">{{ formatTime(item.publishedAt) }}</span>
           </div>
           <p>{{ item.summary }}</p>
           <p>
-            <span v-for="tag in item.tags" :key="tag" class="tag">{{ tag }}</span>
+            <button
+              v-for="tag in item.tags"
+              :key="tag"
+              class="tag tag-button"
+              :class="{ green: selectedTag === tag }"
+              type="button"
+              @click="selectTag(tag)"
+            >
+              {{ tag }}
+            </button>
             <span class="tag gray">{{ item.source }}</span>
           </p>
           <button @click="toggleNotice(item)">{{ expandedNotice?.id === item.id ? "收起" : "全文" }}</button>
           <p v-if="expandedNotice?.id === item.id" class="muted" style="white-space:pre-wrap">{{ item.content }}</p>
         </article>
-        <EmptyStateCard v-if="!notices.length" text="暂无通知公告" />
+        <EmptyStateCard v-if="!filteredNotices.length" :text="selectedTag ? `暂无「${selectedTag}」标签通知` : '暂无通知公告'" />
       </div>
     </section>
 
