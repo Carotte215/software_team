@@ -284,7 +284,7 @@ def list_plans(db: Session = Depends(get_db), session: CurrentSession = Depends(
 
     rows = db.scalars(select(AcademicPlan).order_by(AcademicPlan.grade.desc(), AcademicPlan.major)).all()
 
-    return {"list": [academic_plan(row) for row in rows]}
+    return {"list": [enrich_plan_payload(academic_plan(row), row.grade, row.major) for row in rows]}
 
 
 

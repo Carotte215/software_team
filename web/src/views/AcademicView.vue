@@ -191,7 +191,7 @@ async function confirmParsedCredits() {
     </section>
 
     <section>
-      <div v-if="moduleGroups.length" class="section-title">155 学分结构</div>
+      <div v-if="moduleGroups.length" class="section-title">{{ report.totalRequired || overview?.totalCredits || "" }} 学分结构</div>
       <div v-if="moduleGroups.length" class="stack">
         <article v-for="group in moduleGroups" :key="group.name" class="card">
           <div class="row between wrap">
