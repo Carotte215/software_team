@@ -921,6 +921,14 @@ async function saveAcademicPlan() {
   await load();
 }
 
+async function deleteAcademicPlan(item) {
+  if (!confirm(`确定删除「${item.grade} · ${item.major}」培养方案？此操作不可恢复。`)) return;
+  const result = await withActionError(() => api.deleteAcademicPlan({ grade: item.grade, major: item.major }), "培养方案删除失败");
+  if (!result) return;
+  toast("培养方案已删除");
+  await load();
+}
+
 function resetTheoryForm() {
   Object.assign(theoryForm, {
     id: "",
@@ -1612,11 +1620,14 @@ async function saveHonor() {
         <span class="tag gray">{{ academicPlans.length }} 个方案</span>
       </div>
       <div class="grid cols-2">
-        <div class="stack">
-          <article v-for="item in academicPlans.slice(0, 6)" :key="item.key" class="card">
+        <div class="stack academic-plan-list">
+          <article v-for="item in academicPlans" :key="item.key" class="card">
             <div class="row between">
               <strong>{{ item.grade }} · {{ item.major }}</strong>
-              <button v-if="session.role === ROLES.TEACHER" @click="editAcademicPlan(item)">编辑</button>
+              <div class="row gap-sm">
+                <button v-if="session.role === ROLES.TEACHER" @click="editAcademicPlan(item)">编辑</button>
+                <button v-if="session.role === ROLES.TEACHER" class="danger" @click="deleteAcademicPlan(item)">删除</button>
+              </div>
             </div>
             <p class="muted">{{ item.modules?.length || 0 }} 个模块 · 总要求 {{ (item.modules || []).reduce((sum, row) => sum + Number(row.required || 0), 0) }} 学分</p>
           </article>
@@ -1864,3 +1875,10 @@ async function saveHonor() {
     </div>
   </template>
 </template>
+
+<style scoped>
+.academic-plan-list {
+  max-height: 420px;
+  overflow-y: auto;
+}
+</style>

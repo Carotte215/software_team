@@ -71,7 +71,7 @@ function saveBlob(blob, name) {
 }
 
 async function uploadAttachments() {
-  return Promise.all(form.files.map(async (item) => (isNativeFile(item) ? api.uploadFile(item, form.type) : item)));
+  return Promise.all(form.files.map(async (item) => (isNativeFile(item) ? api.uploadFile(item, "application") : item)));
 }
 
 async function buildPayload() {

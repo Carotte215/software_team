@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.deps import CurrentSession, get_current_session
 from app.models import AcademicPlan, AcademicProgress, Application, AuditLog, KnowledgeItem, KnowledgeMissKeyword, LeagueProgress, Notice, NoticeBatch, PartyProgress, PartyStage, SmsSimulation, Student
+from app.routers.academic import _resolve_academic_plan
 from app.services.permissions import scoped_student_ids
 from app.services.serializers import audit_log
 
@@ -212,7 +213,7 @@ def academic_risk_rows(db: Session) -> list[dict]:
 
 
 def academic_risk_for_student(db: Session, student: Student) -> dict:
-    plan = db.get(AcademicPlan, f"{student.grade}|{student.major}")
+    plan = _resolve_academic_plan(db, student.grade, student.major)
     progress = db.get(AcademicProgress, student.student_id)
     if not plan or not progress:
         return {

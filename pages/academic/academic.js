@@ -5,11 +5,23 @@ Page({
   data: {
     report: null,
     loading: true,
+    collapsed: {
+      module_gaps: true,
+      suggestions: true,
+      uploads: true,
+    },
   },
 
   onShow() {
     setTabIndex(this, -1);
     this.load();
+  },
+
+  toggleSection(e) {
+    const key = e.currentTarget.dataset.key;
+    this.setData({
+      [`collapsed.${key}`]: !this.data.collapsed[key],
+    });
   },
 
   async load() {

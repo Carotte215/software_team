@@ -10,7 +10,7 @@ from app.db.session import get_db
 from app.deps import CurrentSession, get_current_session
 from app.models import PartyProgress, PartyStage, PartyTimelineRule, Student, PartyCalendarEvent
 from app.services.common import audit, now_ms, uid
-from app.services.party_helpers import sync_political_for_party, validate_party_advance
+from app.services.party_helpers import sync_political_for_party, sync_stage_from_political, validate_party_advance
 from app.services.party_materials import (
     attach_step_materials,
     current_quarter_label,
@@ -158,6 +158,9 @@ def progress(db: Session = Depends(get_db), session: CurrentSession = Depends(ge
     if not row:
         raise HTTPException(status_code=404, detail="party progress not found")
     if refresh_party_tasks_from_official(row, db):
+        db.commit()
+    student = db.get(Student, session.student_id)
+    if student and sync_stage_from_political(student, row):
         db.commit()
     stages = load_party_stages(db)
     current_order = next((s["order"] for s in stages if s["key"] == row.current_key), 0)

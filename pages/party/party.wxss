@@ -139,3 +139,14 @@
 .tdone {
   margin-top: 12rpx;
 }
+
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.collapse-arrow {
+  font-size: 22rpx;
+  color: #9ca3af;
+}

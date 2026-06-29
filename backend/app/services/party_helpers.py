@@ -1,5 +1,7 @@
 """党团阶段推进校验与政治面貌联动。"""
 
+from datetime import datetime, timezone
+
 from fastapi import HTTPException
 
 from app.models import LeagueProgress, PartyProgress, Student
@@ -89,6 +91,36 @@ def sync_political_for_party(student: Student, stage_key: str) -> None:
     label = PARTY_POLITICAL_BY_STAGE.get(stage_key)
     if label:
         student.political_status = label
+
+
+POLITICAL_TO_STAGE = {
+    "入党申请人": "applicant",
+    "入党积极分子": "activist",
+    "发展对象": "candidate",
+    "中共预备党员": "probationary",
+    "中共党员": "member",
+    "正式党员": "member",
+}
+
+
+def sync_stage_from_political(student: Student, row: PartyProgress) -> bool:
+    """If student.political_status maps to a different party stage than row.current_key,
+    sync row.current_key to match. Returns True if a change was made."""
+    expected = POLITICAL_TO_STAGE.get((student.political_status or "").strip())
+    if not expected:
+        return False
+    if row.current_key == expected:
+        return False
+    row.current_key = expected
+    row.history = [
+        *(row.history or []),
+        {
+            "stageKey": expected,
+            "at": int(datetime.now(timezone.utc).timestamp() * 1000),
+            "remark": f"系统根据政治面貌「{student.political_status}」自动同步当前阶段",
+        },
+    ]
+    return True
 
 
 def sync_political_for_league(student: Student, stage_key: str) -> None:

@@ -5,11 +5,23 @@ const { formatTime } = require('../../utils/format');
 Page({
   data: {
     flow: null,
+    collapsed: {
+      flow_overview: true,
+      history: true,
+      tasks: true,
+    },
   },
 
   onShow() {
     setTabIndex(this, 2);
     this.load();
+  },
+
+  toggleSection(e) {
+    const key = e.currentTarget.dataset.key;
+    this.setData({
+      [`collapsed.${key}`]: !this.data.collapsed[key],
+    });
   },
 
   async load() {

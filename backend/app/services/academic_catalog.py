@@ -526,9 +526,22 @@ def is_legacy_seed_modules(modules: list[dict]) -> bool:
 def enrich_plan_payload(payload: dict | None, grade: str = "", major: str = "") -> dict | None:
     if not payload:
         return None
-    official = official_plan_for(payload.get("grade") or grade, payload.get("major") or major)
+    plan_grade = payload.get("grade") or grade
+    plan_major = payload.get("major") or major
+    official = official_plan_for(plan_grade, plan_major)
     if not official:
-        return payload
+        total_credits = round(sum(float(item.get("required", 0) or 0) for item in payload.get("modules", [])), 1)
+        return {
+            **payload,
+            "overview": {
+                "title": f"{plan_major or '未设定'}专业 {plan_grade or '未知'}级本科培养方案",
+                "degree": "学士",
+                "duration": "四年",
+                "totalCredits": total_credits,
+                "principle": "",
+                "objective": "",
+            },
+        }
     if is_legacy_seed_modules(payload.get("modules", [])):
         payload = {**payload, "modules": official["modules"]}
     official_modules = {item["key"]: item for item in official["modules"]}

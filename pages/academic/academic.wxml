@@ -19,21 +19,36 @@
       </view>
 
       <view class="card" wx:if="{{report.modules && report.modules.length}}">
-        <view class="section-title">模块学分缺口</view>
-        <view class="mod" wx:for="{{report.modules}}" wx:key="key">
-          <view class="m1">{{item.name}} · 风险 {{item.risk}}</view>
-          <view class="m2">要求 {{item.required}} · 已获得 {{item.earned}} · 缺口 {{item.gap}}</view>
+        <view class="section-title collapsible-header" data-key="module_gaps" bindtap="toggleSection">
+          <text>模块学分缺口</text>
+          <text class="collapse-arrow">{{collapsed.module_gaps ? '▶' : '▼'}}</text>
+        </view>
+        <view wx:if="{{!collapsed.module_gaps}}">
+          <view class="mod" wx:for="{{report.modules}}" wx:key="key">
+            <view class="m1">{{item.name}} · 风险 {{item.risk}}</view>
+            <view class="m2">要求 {{item.required}} · 已获得 {{item.earned}} · 缺口 {{item.gap}}</view>
+          </view>
         </view>
       </view>
 
       <view class="card" wx:if="{{report.suggestions && report.suggestions.length}}">
-        <view class="section-title">修读建议（非选课引擎）</view>
-        <view class="sg" wx:for="{{report.suggestions}}" wx:key="focus">{{item.hint}}</view>
+        <view class="section-title collapsible-header" data-key="suggestions" bindtap="toggleSection">
+          <text>修读建议（非选课引擎）</text>
+          <text class="collapse-arrow">{{collapsed.suggestions ? '▶' : '▼'}}</text>
+        </view>
+        <view wx:if="{{!collapsed.suggestions}}">
+          <view class="sg" wx:for="{{report.suggestions}}" wx:key="focus">{{item.hint}}</view>
+        </view>
       </view>
 
       <view class="card" wx:if="{{report.uploads && report.uploads.length}}">
-        <view class="section-title">上传记录</view>
-        <view class="up" wx:for="{{report.uploads}}" wx:key="at">{{item.name}} · {{item.note}}</view>
+        <view class="section-title collapsible-header" data-key="uploads" bindtap="toggleSection">
+          <text>上传记录</text>
+          <text class="collapse-arrow">{{collapsed.uploads ? '▶' : '▼'}}</text>
+        </view>
+        <view wx:if="{{!collapsed.uploads}}">
+          <view class="up" wx:for="{{report.uploads}}" wx:key="at">{{item.name}} · {{item.note}}</view>
+        </view>
       </view>
     </block>
   </block>

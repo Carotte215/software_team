@@ -37,6 +37,53 @@ router = APIRouter(prefix="/academic", tags=["academic"])
 
 
 
+def _resolve_academic_plan(db: Session, grade: str, major: str) -> AcademicPlan | None:
+    """Look up an AcademicPlan by grade+major, with normalization for common field value mismatches
+    (e.g. '2025' vs '2025级', '软件工程' vs '软件工程专业')."""
+    norm_grade = (grade or "").strip()
+    norm_major = (major or "").strip()
+    exact_key = f"{norm_grade}|{norm_major}"
+    row = db.get(AcademicPlan, exact_key)
+    if row:
+        return row
+    grade_variants = {norm_grade}
+    if norm_grade.endswith("级"):
+        grade_variants.add(norm_grade[:-1])
+    else:
+        grade_variants.add(norm_grade + "级")
+    major_variants = {norm_major}
+    if norm_major.endswith("专业"):
+        major_variants.add(norm_major[:-2])
+    else:
+        major_variants.add(norm_major + "专业")
+    all_plans = db.scalars(select(AcademicPlan)).all()
+    for gv in grade_variants:
+        for mv in major_variants:
+            for p in all_plans:
+                if (p.grade or "").strip() == gv and (p.major or "").strip() == mv:
+                    return p
+    return None
+
+def _synthetic_plan_payload(grade: str, major: str) -> dict:
+    """Return a minimal plan payload when no AcademicPlan record exists for the student's grade+major."""
+    norm_grade = (grade or "").strip()
+    norm_major = (major or "").strip()
+    return {
+        "key": f"{norm_grade}|{norm_major}",
+        "grade": norm_grade,
+        "major": norm_major,
+        "modules": [],
+        "overview": {
+            "title": f"{norm_major or '未设定'}专业 {norm_grade or '未知'}级本科培养方案",
+            "degree": "学士",
+            "duration": "四年",
+            "totalCredits": 0,
+            "principle": "",
+            "objective": "当前年级/专业的培养方案尚未由管理老师录入，请联系老师维护培养方案。",
+        },
+    }
+
+
 @router.get("/plan")
 
 def plan(db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
@@ -47,9 +94,11 @@ def plan(db: Session = Depends(get_db), session: CurrentSession = Depends(get_cu
 
         raise HTTPException(status_code=404, detail="student not found")
 
-    key = f"{student.grade}|{student.major}"
-
-    plan_payload = enrich_plan_payload(academic_plan(db.get(AcademicPlan, key)), student.grade, student.major)
+    academic_plan_row = _resolve_academic_plan(db, student.grade, student.major)
+    if academic_plan_row:
+        plan_payload = enrich_plan_payload(academic_plan(academic_plan_row), student.grade, student.major)
+    else:
+        plan_payload = _synthetic_plan_payload(student.grade, student.major)
     response = {"plan": plan_payload, "progress": academic_progress(db.get(AcademicProgress, session.student_id))}
     if plan_payload and not plan_payload.get("courseMap"):
         response["referencePlan"] = official_reference_payload()
@@ -69,13 +118,14 @@ def report(db: Session = Depends(get_db), session: CurrentSession = Depends(get_
 
     progress_row = payload["progress"]
 
-    if not plan_row or not progress_row:
-
+    if not plan_row:
         return {
             "ok": False,
-            "message": "缺少培养方案或学业进度。",
+            "message": "缺少培养方案。",
             "hint": "请先让管理老师维护培养方案，再上传成绩单或手动录入模块学分。",
         }
+    if not progress_row:
+        progress_row = {"studentId": session.student_id, "modules": [], "uploads": [], "courses": []}
     progress_by_key = {item["key"]: item for item in progress_row["modules"]}
 
     modules = []
@@ -191,7 +241,7 @@ async def upload_transcript(
 
     student = db.get(Student, session.student_id)
 
-    plan = db.get(AcademicPlan, f"{student.grade}|{student.major}") if student else None
+    plan = _resolve_academic_plan(db, student.grade, student.major) if student else None
 
     plan_modules = (plan.modules or []) if plan else []
 
@@ -325,7 +375,29 @@ def save_plan(payload: AcademicPlanPut, db: Session = Depends(get_db), session: 
     return academic_plan(row)
 
 
+@router.delete("/workbench/plans")
 
+def delete_plan(payload: AcademicPlanPut, db: Session = Depends(get_db), session: CurrentSession = Depends(get_current_session)) -> dict:
+
+    if session.role != "teacher":
+
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    key = f"{payload.grade}|{payload.major}"
+
+    row = db.get(AcademicPlan, key)
+
+    if not row:
+
+        raise HTTPException(status_code=404, detail="plan not found")
+
+    db.delete(row)
+
+    audit(db, session, "academic_plan_delete", key)
+
+    db.commit()
+
+    return {"ok": True}
 
 
 @router.post("/workbench/plans/import")

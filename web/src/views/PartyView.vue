@@ -24,6 +24,21 @@ const thoughtForm = reactive({ content: "", attachments: [] });
 const thoughtReports = ref([]);
 const currentQuarter = ref("");
 
+const collapsed = reactive({
+  flow_overview: true,
+  current_stage: true,
+  tasks: true,
+  history: true,
+  calendar: true,
+  thought_reports: true,
+  theory_quiz: true,
+  official_docs: true,
+});
+
+function toggleSection(key) {
+  collapsed[key] = !collapsed[key];
+}
+
 const activeFlow = computed(() => (tab.value === "party" ? partyFlow.value : leagueFlow.value));
 const officialMeta = computed(() => activeFlow.value?.officialMeta || officialGuide.value?.meta || null);
 const thoughtGuide = computed(() => officialGuide.value?.thoughtReportGuide || null);
@@ -357,8 +372,11 @@ async function submitThoughtReport() {
 
     <div class="grid cols-2">
       <section>
-        <div class="section-title">流程总览</div>
-        <div class="card timeline">
+        <div class="section-title collapsible-header" @click="toggleSection('flow_overview')">
+          流程总览
+          <span class="collapse-arrow">{{ collapsed.flow_overview ? '▶' : '▼' }}</span>
+        </div>
+        <div class="card timeline" v-show="!collapsed.flow_overview">
           <div
             v-for="stage in activeFlow.stages"
             :key="stage.key"
@@ -373,8 +391,11 @@ async function submitThoughtReport() {
           </div>
         </div>
 
-        <div class="section-title">官方文件</div>
-        <div class="stack">
+        <div class="section-title collapsible-header" @click="toggleSection('official_docs')">
+          官方文件
+          <span class="collapse-arrow">{{ collapsed.official_docs ? '▶' : '▼' }}</span>
+        </div>
+        <div class="stack" v-show="!collapsed.official_docs">
           <div v-for="doc in officialDocs" :key="doc.id" class="card">
             <strong>{{ doc.title }}</strong>
             <p class="muted">{{ doc.description }}</p>
@@ -388,8 +409,11 @@ async function submitThoughtReport() {
       </section>
 
       <section>
-        <div class="section-title">当前阶段环节（官方 {{ currentStageSteps.length }} 项）</div>
-        <div class="stack">
+        <div class="section-title collapsible-header" @click="toggleSection('current_stage')">
+          当前阶段环节（官方 {{ currentStageSteps.length }} 项）
+          <span class="collapse-arrow">{{ collapsed.current_stage ? '▶' : '▼' }}</span>
+        </div>
+        <div class="stack" v-show="!collapsed.current_stage">
           <div v-for="step in currentStageSteps" :key="step.id" class="card">
             <div class="row between">
               <strong>{{ step.order }}. {{ step.name }}</strong>
@@ -420,8 +444,11 @@ async function submitThoughtReport() {
           <EmptyStateCard v-if="!currentStageSteps.length" text="当前阶段暂无环节清单" />
         </div>
 
-        <div class="section-title">待办提醒</div>
-        <div class="stack">
+        <div class="section-title collapsible-header" @click="toggleSection('tasks')">
+          待办提醒
+          <span class="collapse-arrow">{{ collapsed.tasks ? '▶' : '▼' }}</span>
+        </div>
+        <div class="stack" v-show="!collapsed.tasks">
           <div v-for="task in activeFlow.tasks" :key="task.id" class="card">
             <strong>{{ task.title }}</strong>
             <p class="muted">{{ task.body }}</p>
@@ -433,8 +460,11 @@ async function submitThoughtReport() {
           <EmptyStateCard v-if="!activeFlow.tasks?.length" text="暂无待办" />
         </div>
 
-        <div class="section-title">历史节点</div>
-        <div class="stack">
+        <div class="section-title collapsible-header" @click="toggleSection('history')">
+          历史节点
+          <span class="collapse-arrow">{{ collapsed.history ? '▶' : '▼' }}</span>
+        </div>
+        <div class="stack" v-show="!collapsed.history">
           <div v-for="row in activeFlow.history" :key="row.at" class="card">
             <strong>{{ activeFlow.stages.find((s) => s.key === row.stageKey)?.name || row.stageKey }}</strong>
             <div class="muted">{{ formatTime(row.at) }} · {{ row.remark }}</div>
@@ -481,7 +511,11 @@ async function submitThoughtReport() {
     </section>
 
     <section v-if="calendarHighlights.length" class="card">
-      <h3>2025-2026 学年校历要点</h3>
+      <h3 class="collapsible-header" @click="toggleSection('calendar')">
+        2025-2026 学年校历要点
+        <span class="collapse-arrow">{{ collapsed.calendar ? '▶' : '▼' }}</span>
+      </h3>
+      <div v-show="!collapsed.calendar">
       <p class="muted">依据中国人民大学官方校历 PNG，党团活动请对照以下节点安排。</p>
       <div class="stack compact">
         <div v-for="item in calendarHighlights" :key="item.date" class="card calendar-row">
@@ -493,10 +527,15 @@ async function submitThoughtReport() {
           <p v-if="item.partyHint" class="party-hint">党团提示：{{ item.partyHint }}</p>
         </div>
       </div>
+      </div>
     </section>
 
     <section v-if="tab === 'party'" class="card">
-      <h3>季度思想汇报</h3>
+      <h3 class="collapsible-header" @click="toggleSection('thought_reports')">
+        季度思想汇报
+        <span class="collapse-arrow">{{ collapsed.thought_reports ? '▶' : '▼' }}</span>
+      </h3>
+      <div v-show="!collapsed.thought_reports">
       <p class="muted">当前季度：{{ currentQuarter || "—" }}</p>
       <div v-if="thoughtGuide" class="card muted thought-guide">
         <strong>{{ thoughtGuide.title }}</strong>
@@ -527,14 +566,19 @@ async function submitThoughtReport() {
           <p v-if="item.attachments?.length" class="muted">附件 {{ item.attachments.length }} 个</p>
         </article>
       </div>
+      </div>
     </section>
 
     <section v-if="tab === 'party'" class="card">
       <div class="row between">
-        <h3>党建理论自测</h3>
+        <h3 class="collapsible-header" @click="toggleSection('theory_quiz')">
+          党建理论自测
+          <span class="collapse-arrow">{{ collapsed.theory_quiz ? '▶' : '▼' }}</span>
+        </h3>
         <span v-if="theory.latestAttempt" class="tag gray">上次 {{ theory.latestAttempt.score }} 分</span>
         <span v-if="theory.dailyLimit" class="tag gray">今日 {{ theory.todayAttempts || 0 }}/{{ theory.dailyLimit }} 次</span>
       </div>
+      <div v-show="!collapsed.theory_quiz">
       <form class="stack" @submit.prevent="submitTheory">
         <article v-for="question in theory.list" :key="question.id" class="card">
           <strong>{{ question.stem }}</strong>
@@ -556,11 +600,47 @@ async function submitThoughtReport() {
           <p>{{ item.explanation }}</p>
         </div>
       </div>
+      </div>
     </section>
   </template>
 </template>
 
 <style scoped>
+.collapsible-header {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: color 0.18s ease;
+}
+.collapsible-header:hover {
+  color: var(--primary-strong);
+}
+.collapse-arrow {
+  font-size: 12px;
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+.section-title.collapsible-header {
+  margin: 28px 0 12px;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+.section-title.collapsible-header::before {
+  display: inline-block;
+  width: 8px;
+  height: 20px;
+  margin-right: 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent), var(--rose));
+  vertical-align: -4px;
+  content: "";
+  box-shadow: 0 10px 24px rgba(249, 115, 22, 0.24);
+  flex-shrink: 0;
+}
 .preview-image {
   max-width: 100%;
   margin-top: 12px;

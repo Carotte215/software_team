@@ -9,8 +9,11 @@
     <view class="h-sub">当前阶段以管理端维护为准；提醒任务可对接订阅消息（后续迭代）。</view>
   </view>
 
-  <view class="section-title">流程总览</view>
-  <view class="timeline">
+  <view class="section-title collapsible-header" data-key="flow_overview" bindtap="toggleSection">
+    <text>流程总览</text>
+    <text class="collapse-arrow">{{collapsed.flow_overview ? '▶' : '▼'}}</text>
+  </view>
+  <view class="timeline" wx:if="{{!collapsed.flow_overview}}">
     <view
       class="step {{item.current ? 'step-on' : ''}} {{item.done ? 'step-done' : ''}}"
       wx:for="{{flow.stages}}"
@@ -28,22 +31,32 @@
     </view>
   </view>
 
-  <view class="section-title">阶段变更记录</view>
-  <view class="card" wx:for="{{flow.history}}" wx:key="at">
-    <view class="hl">{{item.stageName}}</view>
-    <view class="hm">{{item.atText}}</view>
-    <view class="hr" wx:if="{{item.remark}}">{{item.remark}}</view>
+  <view class="section-title collapsible-header" data-key="history" bindtap="toggleSection">
+    <text>阶段变更记录</text>
+    <text class="collapse-arrow">{{collapsed.history ? '▶' : '▼'}}</text>
   </view>
-  <view wx:if="{{!flow.history.length}}" class="empty-tip">暂无历史记录</view>
+  <view wx:if="{{!collapsed.history}}">
+    <view class="card" wx:for="{{flow.history}}" wx:key="at">
+      <view class="hl">{{item.stageName}}</view>
+      <view class="hm">{{item.atText}}</view>
+      <view class="hr" wx:if="{{item.remark}}">{{item.remark}}</view>
+    </view>
+    <view wx:if="{{!flow.history.length}}" class="empty-tip">暂无历史记录</view>
+  </view>
 
-  <view class="section-title">待办与提醒</view>
-  <view class="card task" wx:for="{{flow.nextTasks}}" wx:key="id">
-    <view class="t-title">{{item.title}}</view>
-    <view class="tb">{{item.body}}</view>
-    <view class="t-due" wx:if="{{item.dueText}}">建议完成：{{item.dueText}}</view>
-    <button class="tdone" size="mini" type="primary" data-id="{{item.id}}" bindtap="markDone" disabled="{{item.done}}">
-      {{item.done ? '已完成' : '标记完成'}}
-    </button>
+  <view class="section-title collapsible-header" data-key="tasks" bindtap="toggleSection">
+    <text>待办与提醒</text>
+    <text class="collapse-arrow">{{collapsed.tasks ? '▶' : '▼'}}</text>
   </view>
-  <view wx:if="{{!flow.nextTasks.length}}" class="empty-tip">暂无提醒任务</view>
+  <view wx:if="{{!collapsed.tasks}}">
+    <view class="card task" wx:for="{{flow.nextTasks}}" wx:key="id">
+      <view class="t-title">{{item.title}}</view>
+      <view class="tb">{{item.body}}</view>
+      <view class="t-due" wx:if="{{item.dueText}}">建议完成：{{item.dueText}}</view>
+      <button class="tdone" size="mini" type="primary" data-id="{{item.id}}" bindtap="markDone" disabled="{{item.done}}">
+        {{item.done ? '已完成' : '标记完成'}}
+      </button>
+    </view>
+    <view wx:if="{{!flow.nextTasks.length}}" class="empty-tip">暂无提醒任务</view>
+  </view>
 </view>

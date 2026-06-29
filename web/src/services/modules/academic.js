@@ -4,6 +4,7 @@ export function createAcademicApi(call) {
     getAcademicPlan: () => call({ path: "/academic/plan" }),
     listAcademicPlans: () => call({ path: "/academic/workbench/plans" }),
     saveAcademicPlan: (payload) => call({ path: "/academic/workbench/plans", method: "PUT", data: payload }),
+    deleteAcademicPlan: (payload) => call({ path: "/academic/workbench/plans", method: "DELETE", data: payload }),
     importAcademicPlans: (file, options = {}) => {
       const data = new FormData();
       data.append("file", file);

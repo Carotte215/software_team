@@ -66,6 +66,7 @@ export async function mockRequest({ path, method = "GET", data = {}, session }) 
   if (parts[0] === "honors" && parts[1] && verb === "PUT") return updateHonor(parts[1], data, session);
   if (parts[0] === "academic" && parts[1] === "workbench" && parts[2] === "plans" && parts.length === 3 && verb === "GET") return listAcademicPlans(session);
   if (parts[0] === "academic" && parts[1] === "workbench" && parts[2] === "plans" && parts.length === 3 && verb === "PUT") return saveAcademicPlan(data, session);
+  if (parts[0] === "academic" && parts[1] === "workbench" && parts[2] === "plans" && parts.length === 3 && verb === "DELETE") return deleteAcademicPlan(data, session);
   if (parts[0] === "academic" && parts[1] === "workbench" && parts[2] === "plans" && parts[3] === "import") return importAcademicPlans(data, session);
   if (parts[0] === "academic" && parts[1] === "transcript" && parts[2] === "upload" && verb === "POST") return uploadTranscriptFile(data, session);
   if (parts[0] === "academic" && parts[1] === "report") return academicReport(session.studentId);
@@ -856,11 +857,74 @@ function setHonorOnline(id, data, session) {
   return filterHonorAttachments(row, session.role);
 }
 
+function _resolvePlanKey(db, grade, major) {
+  const normGrade = (grade || "").trim();
+  const normMajor = (major || "").trim();
+  const exactKey = `${normGrade}|${normMajor}`;
+  if (db.academic.plansByKey[exactKey]) return exactKey;
+  const gv = [normGrade];
+  if (normGrade.endsWith("级")) gv.push(normGrade.slice(0, -1));
+  else gv.push(normGrade + "级");
+  const mv = [normMajor];
+  if (normMajor.endsWith("专业")) mv.push(normMajor.slice(0, -2));
+  else mv.push(normMajor + "专业");
+  for (const g of gv) {
+    for (const m of mv) {
+      const key = `${g}|${m}`;
+      if (db.academic.plansByKey[key]) return key;
+    }
+  }
+  return null;
+}
+
+function _enrichPlanForMock(plan, grade, major) {
+  if (!plan) {
+    const g = (grade || "").trim();
+    const m = (major || "").trim();
+    const total = 0;
+    return {
+      key: `${g}|${m}`,
+      grade: g,
+      major: m,
+      modules: [],
+      overview: {
+        title: `${m || "未设定"}专业 ${g || "未知"}级本科培养方案`,
+        degree: "学士",
+        duration: "四年",
+        totalCredits: total,
+        principle: "",
+        objective: "当前年级/专业的培养方案尚未由管理老师录入，请联系老师维护培养方案。",
+      },
+    };
+  }
+  const total = plan.modules.reduce((sum, item) => sum + Number(item.required || 0), 0);
+  return {
+    ...plan,
+    overview: {
+      title: `${plan.major || major || ""}专业 ${plan.grade || grade || ""}级本科培养方案`,
+      degree: "学士",
+      duration: "四年",
+      totalCredits: Math.round(total * 10) / 10,
+      principle: "",
+      objective: "",
+    },
+  };
+}
+
 function academicPlan(studentId) {
   const db = readDb();
   const s = db.students.find((x) => x.studentId === studentId);
+  if (!s) return { plan: null, progress: null };
   const key = `${s.grade}|${s.major}`;
-  return { plan: db.academic.plansByKey[key], progress: db.academic.progressByStudent[studentId] };
+  const resolved = _resolvePlanKey(db, s.grade, s.major);
+  const raw = resolved ? db.academic.plansByKey[resolved] : null;
+  const plan = _enrichPlanForMock(raw, s.grade, s.major);
+  const response = { plan, progress: db.academic.progressByStudent[studentId] };
+  if (plan && !plan.courseMap) {
+    const mockRefPlan = { key: "2024级|计算机科学与技术", grade: "2024级", major: "计算机科学与技术", modules: [{key:"gen_req",name:"通识必修",required:12},{key:"gen_ele",name:"通识选修",required:8},{key:"major_core",name:"专业核心",required:28},{key:"major_ele",name:"专业选修",required:14},{key:"practice",name:"实践环节",required:8}], courseMap: {terms:[{label:"大一上",courses:[{name:"高等数学A",credits:5},{name:"线性代数A",credits:3},{name:"C语言程序设计",credits:3}]},{label:"大一下",courses:[{name:"离散数学",credits:4},{name:"数据结构",credits:4},{name:"计算机组成原理",credits:4}]},{label:"大二上",courses:[{name:"操作系统",credits:4},{name:"计算机网络",credits:3},{name:"数据库系统概论",credits:3}]},{label:"大二下",courses:[{name:"软件工程",credits:3},{name:"算法设计与分析",credits:3},{name:"编译原理",credits:4}]},{label:"大三上",courses:[{name:"人工智能",credits:3},{name:"计算机体系结构",credits:3},{name:"数字图像处理",credits:2}]},{label:"大三下",courses:[{name:"网络安全",credits:2},{name:"嵌入式系统",credits:3},{name:"前沿研讨",credits:1}]},{label:"大四上",courses:[{name:"毕业设计",credits:6},{name:"专业实习",credits:3}]},{label:"大四下",courses:[{name:"毕业答辩",credits:1}]}],overview:{title:"计算机科学与技术专业 2024 级本科培养方案",degree:"工学学士",duration:"四年",totalCredits:80}},graduationRequirements:["完成毕业设计（论文）并通过答辩","总学分不低于培养方案要求的最低学分","通过大学英语四级或达到学校规定的同等水平","无未结清的行政处分"]};
+    response.referencePlan = _enrichPlanForMock(mockRefPlan, "2024级", "计算机科学与技术");
+  }
+  return response;
 }
 
 function listAcademicPlans(session) {
@@ -882,6 +946,16 @@ function saveAcademicPlan(data, session) {
     appendAudit(db, session, "academic_plan_save", key);
   });
   return plan;
+}
+
+function deleteAcademicPlan(data, session) {
+  requireTeacher(session);
+  const key = data.key || `${data.grade}|${data.major}`;
+  withDb((db) => {
+    delete db.academic.plansByKey[key];
+    appendAudit(db, session, "academic_plan_delete", key);
+  });
+  return { ok: true };
 }
 
 async function importAcademicPlans(data, session) {
@@ -951,21 +1025,30 @@ function groupAcademicPlanRows(rows) {
 
 function academicReport(studentId) {
   const { plan, progress } = academicPlan(studentId);
-  if (!plan || !progress) return { ok: false, message: "缺少培养方案或学业进度。" };
-  const modules = plan.modules.map((m) => {
-    const got = progress.modules.find((x) => x.key === m.key);
+  if (!progress) return { ok: false, message: "缺少学业进度。" };
+  if (!plan) return { ok: false, message: "缺少培养方案。" };
+  const modules = (plan.modules || []).map((m) => {
+    const got = (progress.modules || []).find((x) => x.key === m.key);
     const earned = Number(got?.earned || 0);
     const gap = Math.max(0, m.required - earned);
     return { ...m, earned, gap, risk: gap >= 4 ? "高" : gap >= 2 ? "中" : "低" };
   });
-  return {
+  const result = {
     ok: true,
     modules,
+    overview: plan.overview || null,
+    courseMap: plan.courseMap || null,
+    graduationRequirements: plan.graduationRequirements || [],
     riskLevel: modules.some((m) => m.risk === "高") ? "高" : modules.some((m) => m.risk === "中") ? "中" : "低",
     suggestions: modules.filter((m) => m.gap > 0).map((m) => ({ focus: m.name, hint: `仍需约 ${m.gap} 学分，请关注 ${m.name} 相关课程。` })),
     uploads: progress.uploads || [],
     courses: progress.courses || [],
   };
+  if (!plan.courseMap) {
+    const mockRefPlan = { key: "2024级|计算机科学与技术", grade: "2024级", major: "计算机科学与技术", modules: [{key:"gen_req",name:"通识必修",required:12},{key:"gen_ele",name:"通识选修",required:8},{key:"major_core",name:"专业核心",required:28},{key:"major_ele",name:"专业选修",required:14},{key:"practice",name:"实践环节",required:8}], courseMap: {terms:[{label:"大一上",courses:[{name:"高等数学A",credits:5},{name:"线性代数A",credits:3},{name:"C语言程序设计",credits:3}]},{label:"大一下",courses:[{name:"离散数学",credits:4},{name:"数据结构",credits:4},{name:"计算机组成原理",credits:4}]},{label:"大二上",courses:[{name:"操作系统",credits:4},{name:"计算机网络",credits:3},{name:"数据库系统概论",credits:3}]},{label:"大二下",courses:[{name:"软件工程",credits:3},{name:"算法设计与分析",credits:3},{name:"编译原理",credits:4}]},{label:"大三上",courses:[{name:"人工智能",credits:3},{name:"计算机体系结构",credits:3},{name:"数字图像处理",credits:2}]},{label:"大三下",courses:[{name:"网络安全",credits:2},{name:"嵌入式系统",credits:3},{name:"前沿研讨",credits:1}]},{label:"大四上",courses:[{name:"毕业设计",credits:6},{name:"专业实习",credits:3}]},{label:"大四下",courses:[{name:"毕业答辩",credits:1}]}],overview:{title:"计算机科学与技术专业 2024 级本科培养方案",degree:"工学学士",duration:"四年",totalCredits:80}},graduationRequirements:["完成毕业设计（论文）并通过答辩","总学分不低于培养方案要求的最低学分","通过大学英语四级或达到学校规定的同等水平","无未结清的行政处分"]};
+    result.referencePlan = _enrichPlanForMock(mockRefPlan, "2024级", "计算机科学与技术");
+  }
+  return result;
 }
 
 function academicRisks(session) {

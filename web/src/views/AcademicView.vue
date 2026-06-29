@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, inject, onMounted, reactive, ref, watch } from "vue";
 import { ROLES } from "../data/seed.js";
 import { go } from "../state/routes.js";
 
@@ -10,9 +10,28 @@ const report = ref(null);
 const planPayload = ref(null);
 const lastTranscriptFile = ref(null);
 
+const collapsed = reactive({
+  credit_structure: true,
+  module_gaps: true,
+  course_map: true,
+  suggestions: true,
+});
+
+function toggleSection(key) {
+  collapsed[key] = !collapsed[key];
+}
+
 const isStudent = computed(() => session.value.role === ROLES.STUDENT);
 const referencePlan = computed(() => report.value?.referencePlan || planPayload.value?.referencePlan || null);
-const overview = computed(() => report.value?.overview || planPayload.value?.plan?.overview || referencePlan.value?.overview || null);
+const overview = computed(() => {
+  const src = report.value?.overview || planPayload.value?.plan?.overview || null;
+  if (src) return src;
+  const pg = planPayload.value?.plan;
+  if (pg && (pg.grade || pg.major)) {
+    return { title: `${pg.major || "未设定"}专业 ${pg.grade || "未知"}级本科培养方案`, degree: "学士", duration: "四年", totalCredits: pg.modules?.reduce((s, m) => s + Number(m.required || 0), 0) || 0 };
+  }
+  return null;
+});
 const courseMap = computed(() => report.value?.courseMap || planPayload.value?.plan?.courseMap || referencePlan.value?.courseMap || null);
 const moduleGroups = computed(() => report.value?.moduleGroups || []);
 const graduationRequirements = computed(() => report.value?.graduationRequirements?.length ? report.value.graduationRequirements : referencePlan.value?.graduationRequirements || []);
@@ -176,9 +195,44 @@ async function confirmParsedCredits() {
         </div>
         <p v-if="report.warning" class="tag orange">{{ report.warning }}</p>
       </div>
+    </section>
 
-      <div class="section-title">模块学分缺口</div>
-      <div class="stack">
+    <section>
+      <div class="section-title collapsible-header" @click="toggleSection('credit_structure')">
+        {{ report.totalRequired || overview?.totalCredits || "" }} 学分结构
+        <span class="collapse-arrow">{{ collapsed.credit_structure ? '▶' : '▼' }}</span>
+      </div>
+      <div v-show="!collapsed.credit_structure">
+        <div v-if="moduleGroups.length" class="stack">
+          <article v-for="group in moduleGroups" :key="group.name" class="card">
+            <div class="row between wrap">
+              <strong>{{ group.name }}</strong>
+              <span class="tag" :class="riskClass(group.risk)">缺口 {{ group.gap }}</span>
+            </div>
+            <div class="credit-bar">
+              <span :style="{ width: `${Math.min(100, (Number(group.earned || 0) / Math.max(1, Number(group.required || 1))) * 100)}%` }"></span>
+            </div>
+            <p class="muted">要求 {{ group.required }} · 已获 {{ group.earned }}</p>
+          </article>
+        </div>
+
+        <div class="card">
+          <h3>维护已获学分</h3>
+          <form class="stack" @submit.prevent="saveProgress">
+            <label v-for="item in planPayload?.plan?.modules || []" :key="item.key">
+              {{ item.name }}（要求 {{ item.required }}）
+              <input type="number" min="0" step="0.5" :name="item.key" :value="earnedFor(item.key)" />
+            </label>
+            <button class="primary">保存</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="section-title collapsible-header" @click="toggleSection('module_gaps')">
+        模块学分缺口
+        <span class="collapse-arrow">{{ collapsed.module_gaps ? '▶' : '▼' }}</span>
+      </div>
+      <div class="stack" v-show="!collapsed.module_gaps">
         <div v-for="item in report.modules" :key="item.key" class="card row between">
           <div>
             <strong>{{ item.name }}</strong>
@@ -188,39 +242,24 @@ async function confirmParsedCredits() {
           <span class="tag" :class="riskClass(item.risk)">风险 {{ item.risk }}</span>
         </div>
       </div>
-    </section>
 
-    <section>
-      <div v-if="moduleGroups.length" class="section-title">{{ report.totalRequired || overview?.totalCredits || "" }} 学分结构</div>
-      <div v-if="moduleGroups.length" class="stack">
-        <article v-for="group in moduleGroups" :key="group.name" class="card">
-          <div class="row between wrap">
-            <strong>{{ group.name }}</strong>
-            <span class="tag" :class="riskClass(group.risk)">缺口 {{ group.gap }}</span>
-          </div>
-          <div class="credit-bar">
-            <span :style="{ width: `${Math.min(100, (Number(group.earned || 0) / Math.max(1, Number(group.required || 1))) * 100)}%` }"></span>
-          </div>
-          <p class="muted">要求 {{ group.required }} · 已获 {{ group.earned }}</p>
-        </article>
+      <div class="section-title collapsible-header" @click="toggleSection('suggestions')">
+        修读建议
+        <span class="collapse-arrow">{{ collapsed.suggestions ? '▶' : '▼' }}</span>
       </div>
-
-      <div class="card">
-        <h3>维护已获学分</h3>
-        <form class="stack" @submit.prevent="saveProgress">
-          <label v-for="item in planPayload?.plan?.modules || []" :key="item.key">
-            {{ item.name }}（要求 {{ item.required }}）
-            <input type="number" min="0" step="0.5" :name="item.key" :value="earnedFor(item.key)" />
-          </label>
-          <button class="primary">保存</button>
-        </form>
+      <div class="stack" v-show="!collapsed.suggestions">
+        <div v-for="item in report?.suggestions || []" :key="item.focus" class="card">{{ item.hint }}</div>
       </div>
     </section>
   </div>
 
   <section v-if="courseMap" class="card course-map-card">
-    <h3>课程地图{{ isReferenceCatalog ? "（官方参考）" : "" }}</h3>
-    <p class="muted">根据培养方案的开设学期展示，“应修尽修”课程建议按图中学期修读。</p>
+    <h3 class="collapsible-header" @click="toggleSection('course_map')">
+      课程地图{{ isReferenceCatalog ? "（官方参考）" : "" }}
+      <span class="collapse-arrow">{{ collapsed.course_map ? '▶' : '▼' }}</span>
+    </h3>
+    <div v-show="!collapsed.course_map">
+    <p class="muted">根据培养方案的开设学期展示，"应修尽修"课程建议按图中学期修读。</p>
     <div class="course-map">
       <div class="course-map-head">课程模块</div>
       <div v-for="term in courseMap.semesters" :key="term" class="course-map-head">{{ term }}</div>
@@ -244,6 +283,7 @@ async function confirmParsedCredits() {
         <span>{{ band.text }}</span>
       </div>
     </div>
+    </div>
   </section>
 
   <section v-if="graduationRequirements.length" class="card">
@@ -259,14 +299,44 @@ async function confirmParsedCredits() {
     <div>{{ report?.message || "加载中" }}</div>
     <div v-if="report?.hint" class="muted">{{ report.hint }}</div>
   </div>
-
-  <div class="section-title">修读建议</div>
-  <div class="stack">
-    <div v-for="item in report?.suggestions || []" :key="item.focus" class="card">{{ item.hint }}</div>
-  </div>
 </template>
 
 <style scoped>
+.collapsible-header {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: color 0.18s ease;
+}
+.collapsible-header:hover {
+  color: var(--primary-strong);
+}
+.collapse-arrow {
+  font-size: 12px;
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+.section-title.collapsible-header {
+  margin: 28px 0 12px;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+.section-title.collapsible-header::before {
+  display: inline-block;
+  width: 8px;
+  height: 20px;
+  margin-right: 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent), var(--rose));
+  vertical-align: -4px;
+  content: "";
+  box-shadow: 0 10px 24px rgba(249, 115, 22, 0.24);
+  flex-shrink: 0;
+}
 .academic-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
